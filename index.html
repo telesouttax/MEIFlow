@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root {
   --black:#080810;--dark:#0e0e1a;--dark2:#13131f;--dark3:#1a1a2e;--dark4:#212138;
@@ -195,6 +196,7 @@ tr:hover td{background:rgba(124,58,237,.04);}
       <div class="nav-section-label">Gestão</div>
       <div class="nav-item" onclick="goTo('clientes',this)">
         <span style="font-size:16px">⬡</span> Clientes
+        <span id="pending-badge" style="display:none;margin-left:auto;background:var(--warning);color:#000;border-radius:20px;padding:1px 7px;font-size:10px;font-weight:700"></span>
       </div>
       <div class="nav-item" onclick="goTo('notas',this)">
         <span style="font-size:16px">▣</span> Notas Fiscais
@@ -259,7 +261,10 @@ tr:hover td{background:rgba(124,58,237,.04);}
     <section class="section" id="sec-clientes">
       <div class="page-header">
         <div><h1 class="page-title">Clientes</h1><p class="page-sub">Gerencie seus clientes e contratos recorrentes</p></div>
-        <button class="btn btn-primary btn-sm" onclick="openModal('modal-cli')">+ Novo cliente</button>
+        <div style="display:flex;gap:.5rem;align-items:center">
+          <button class="btn btn-ghost btn-sm" onclick="copiarLinkCadastro()" title="Copiar link do formulário público">🔗 Link de cadastro</button>
+          <button class="btn btn-primary btn-sm" onclick="openModal('modal-cli')">+ Novo cliente</button>
+        </div>
       </div>
       <div class="toolbar">
         <div class="search-wrap"><span class="search-icon">🔍</span><input type="text" placeholder="Buscar cliente..." oninput="filterCli(this.value)"></div>
@@ -321,8 +326,11 @@ tr:hover td{background:rgba(124,58,237,.04);}
       <div class="form-group"><label>Valor mensal (R$) *</label><input type="number" id="c-valor" placeholder="800"></div>
       <div class="form-group"><label>Dia de pagamento *</label><input type="number" id="c-dia" placeholder="10" min="1" max="31"></div>
     </div>
+    <div class="form-row">
+      <div class="form-group"><label>CNPJ / CPF</label><input type="text" id="c-cnpj" placeholder="00.000.000/0001-00"></div>
+      <div class="form-group"><label>Status</label><select id="c-status"><option value="ativo">Ativo</option><option value="inativo">Inativo</option><option value="pausa">Em pausa</option></select></div>
+    </div>
     <div class="form-group"><label>Serviço prestado</label><input type="text" id="c-servico" placeholder="Design gráfico, identidade visual..."></div>
-    <div class="form-group"><label>Status</label><select id="c-status"><option value="ativo">Ativo</option><option value="inativo">Inativo</option><option value="pausa">Em pausa</option></select></div>
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-cli')">Cancelar</button>
       <button class="btn btn-primary" style="width:auto" onclick="salvarCli()">Salvar cliente</button>
@@ -342,13 +350,9 @@ tr:hover td{background:rgba(124,58,237,.04);}
       <div id="nf-upload-idle">
         <div style="font-size:28px;margin-bottom:.5rem;opacity:.5">📎</div>
         <div style="font-size:14px;font-weight:500;color:var(--text-muted)">Anexar nota fiscal</div>
-        <div style="font-size:12px;color:var(--text-dim);margin-top:4px">PDF ou imagem · arraste ou clique · a IA preenche os campos automaticamente</div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:4px">PDF ou imagem · arraste ou clique · preencha os campos abaixo após anexar</div>
       </div>
-      <div id="nf-upload-loading" style="display:none">
-        <div style="font-size:24px;margin-bottom:.5rem;animation:spin 1s linear infinite;display:inline-block">⚡</div>
-        <div style="font-size:14px;font-weight:500;color:var(--purple-ultra)">Lendo nota fiscal...</div>
-        <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Extraindo informações com IA</div>
-      </div>
+
       <div id="nf-upload-done" style="display:none;flex-direction:row;align-items:center;gap:12px;text-align:left">
         <div style="font-size:28px">📄</div>
         <div style="flex:1">
@@ -411,41 +415,52 @@ tr:hover td{background:rgba(124,58,237,.04);}
 </div>
 
 <script>
-const SK = 'meiflow_v2';
-function load() {
-  const r = localStorage.getItem(SK);
-  if (r) return JSON.parse(r);
-  return {
-    user:{name:'Designer',email:'designer@meiflow.com'},
-    clientes:[
-      {id:1,nome:'Igreja Bom Pastor',resp:'Pastor João',email:'financeiro@igrejabompastor.com',tel:'(11) 99999-0001',valor:800,dia:10,servico:'Design gráfico e identidade visual',status:'ativo'},
-      {id:2,nome:'Studio Criativo Ltda',resp:'Ana Lima',email:'ana@studiocriativo.com',tel:'(11) 98888-0002',valor:1500,dia:5,servico:'Branding e redes sociais',status:'ativo'},
-      {id:3,nome:'Padaria Família',resp:'Carlos Souza',email:'carlos@padariafamilia.com',tel:'(11) 97777-0003',valor:600,dia:15,servico:'Cardápio e materiais gráficos',status:'ativo'},
-    ],
-    notas:[
-      {id:1,num:'0041',cId:1,desc:'Design gráfico — junho/2025',valor:800,emissao:'2025-06-01',venc:'2025-06-10',status:'paga'},
-      {id:2,num:'0042',cId:2,desc:'Branding completo — junho/2025',valor:1500,emissao:'2025-06-02',venc:'2025-06-05',status:'paga'},
-      {id:3,num:'0043',cId:3,desc:'Cardápio digital — junho/2025',valor:600,emissao:'2025-06-03',venc:'2025-06-15',status:'paga'},
-      {id:4,num:'0044',cId:1,desc:'Design gráfico — julho/2025',valor:800,emissao:'2025-07-01',venc:'2025-07-10',status:'enviada'},
-      {id:5,num:'0045',cId:2,desc:'Redes sociais — julho/2025',valor:1500,emissao:'2025-07-01',venc:'2025-07-05',status:'atrasada'},
-      {id:6,num:'0046',cId:3,desc:'Materiais impressos — julho/2025',valor:600,emissao:'2025-07-02',venc:'2025-07-15',status:'emitida'},
-    ],
-    lancs:[
-      {id:1,cId:1,desc:'Pagamento junho',valor:800,data:'2025-06-10',nf:'NF 0041'},
-      {id:2,cId:2,desc:'Pagamento junho',valor:1500,data:'2025-06-05',nf:'NF 0042'},
-      {id:3,cId:3,desc:'Pagamento junho',valor:600,data:'2025-06-15',nf:'NF 0043'},
-    ]
-  };
+// =========================================
+// SUPABASE CONFIG — cole suas credenciais
+// =========================================
+const SUPA_URL = 'https://njyvntmtempjgteezowc.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qeXZudG10ZW1wamd0ZWV6b3djIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwMzY3MTgsImV4cCI6MjA5NjYxMjcxOH0.pbFRrjhHgLIeqV8DG3MgvzvGsHrFv_xbdhcoVxNtT94';
+// =========================================
+
+let sb = null;
+try { sb = supabase.createClient(SUPA_URL, SUPA_KEY); } catch(e) {}
+
+// DB em memória (cache local)
+let DB = { clientes:[], notas:[], lancs:[], user:{name:'Designer',email:''} };
+
+async function dbLoad() {
+  if (!sb || SUPA_URL.includes('COLE')) {
+    // fallback localStorage (modo offline)
+    const r = localStorage.getItem('meiflow_v2');
+    if (r) { const d = JSON.parse(r); DB.clientes=d.clientes||[]; DB.notas=d.notas||[]; DB.lancs=d.lancs||[]; }
+    return;
+  }
+  try {
+    const [c, n, l] = await Promise.all([
+      sb.from('clientes').select('*').order('created_at'),
+      sb.from('notas').select('*').order('created_at'),
+      sb.from('lancamentos').select('*').order('data'),
+    ]);
+    DB.clientes = (c.data||[]).map(x=>({id:x.id,nome:x.nome,resp:x.responsavel,email:x.email,tel:x.telefone,cnpj:x.cnpj,valor:x.valor_mensal,dia:x.dia_pagamento,servico:x.servico,status:x.status||'pendente'}));
+    DB.notas    = (n.data||[]).map(x=>({id:x.id,num:x.numero,cId:x.cliente_id,desc:x.descricao,valor:x.valor,emissao:x.data_emissao,venc:x.data_vencimento,status:x.status,anexo:x.anexo_url,anexoNome:x.anexo_nome,anexoTipo:x.anexo_tipo}));
+    DB.lancs    = (l.data||[]).map(x=>({id:x.id,cId:x.cliente_id,desc:x.descricao,valor:x.valor,data:x.data,nf:x.nf_numero}));
+  } catch(e) { console.error('Supabase load error', e); }
 }
-function save(){localStorage.setItem(SK,JSON.stringify(DB));}
-let DB=load();
+
+async function save(table, data) {
+  if (!sb || SUPA_URL.includes('COLE')) {
+    localStorage.setItem('meiflow_v2', JSON.stringify({clientes:DB.clientes,notas:DB.notas,lancs:DB.lancs}));
+    return;
+  }
+  // handled per-operation
+}
 
 // HELPERS
 const fmt=v=>'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fd=d=>{if(!d)return'—';const[y,m,day]=d.split('-');return`${day}/${m}/${y}`;};
 const cNome=id=>{const c=DB.clientes.find(x=>x.id==id);return c?c.nome:'—';};
 function badge(s){
-  const m={paga:['success','Paga'],enviada:['info','Enviada'],emitida:['purple','Emitida'],atrasada:['danger','Atrasada'],ativo:['success','Ativo'],inativo:['danger','Inativo'],pausa:['warning','Em pausa']};
+  const m={paga:['success','Paga'],enviada:['info','Enviada'],emitida:['purple','Emitida'],atrasada:['danger','Atrasada'],ativo:['success','Ativo'],inativo:['danger','Inativo'],pausa:['warning','Em pausa'],pendente:['warning','Pendente — novo']};
   const[cls,lbl]=m[s]||['info',s];
   return`<span class="badge badge-${cls}">${lbl}</span>`;
 }
@@ -461,22 +476,25 @@ function toast(msg,t='ok'){
 // =========================================
 // SUAS CREDENCIAIS — edite aqui
 // =========================================
-const MEU_EMAIL = 'teles.designr@gmail.com';   // 👈 troque pelo seu e-mail
-const MINHA_SENHA = '154263Lucas@';   // 👈 troque pela sua senha
+const MEU_EMAIL = 'seu@email.com';   // 👈 troque pelo seu e-mail
+const MINHA_SENHA = 'suasenha123';   // 👈 troque pela sua senha
 // =========================================
 
 // AUTH
-function doLogin(){
+async function doLogin(){
   const e=document.getElementById('login-email').value.trim().toLowerCase();
   const p=document.getElementById('login-pass').value;
   if(!e||!p){toast('⚠ Preencha e-mail e senha','warn');return;}
   if(e!==MEU_EMAIL.toLowerCase()||p!==MINHA_SENHA){
     toast('⚠ E-mail ou senha incorretos','err');
+    document.getElementById('login-page').querySelector('.btn-primary').textContent='⚡ Entrar no painel';
     document.getElementById('login-pass').value='';
     document.getElementById('login-pass').focus();
     return;
   }
+  document.getElementById('login-page').querySelector('.btn-primary').textContent='Carregando...';
   DB.user={name:MEU_EMAIL.split('@')[0],email:MEU_EMAIL};
+  await dbLoad();
   document.getElementById('login-page').style.display='none';
   document.getElementById('app').style.display='block';
   init();
@@ -496,9 +514,13 @@ function init(){
   document.getElementById('dash-date').textContent=new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
   fillMonthFilter();
   renderAll();
+  // Poll for new clients every 30s (catches form submissions)
+  setInterval(async()=>{ await dbLoad(); renderCli(); renderDash(); updateBadge(); }, 30000);
 }
 
-function renderAll(){renderDash();renderCli();renderNF();renderLanc();renderAlertas();renderRel();updateBadge();}
+function renderAll(){renderDash();renderCli();renderNF();renderLanc();renderAlertas();renderRel();updateBadge();updatePendingBadge();}
+
+async function reloadAndRender(){await dbLoad();renderAll();}
 
 // NAV
 function goTo(id,el){
@@ -591,25 +613,38 @@ function renderCli(){
   const f=DB.clientes.filter(c=>c.nome.toLowerCase().includes(cFilt)||c.resp.toLowerCase().includes(cFilt));
   document.getElementById('cli-table').innerHTML=f.length?f.map(c=>`
     <tr>
-      <td><div style="font-weight:500">${c.nome}</div><div style="font-size:12px;color:var(--text-muted)">${c.servico}</div></td>
-      <td><div>${c.resp}</div><div style="font-size:12px;color:var(--text-muted)">${c.email}</div></td>
-      <td class="td-mono" style="color:var(--purple-ultra)">${fmt(c.valor)}</td>
-      <td><span style="font-family:var(--mono);font-size:13px">Dia ${c.dia}</span></td>
+      <td><div style="font-weight:500">${c.nome}</div><div style="font-size:12px;color:var(--text-muted)">${c.cnpj||c.servico||'—'}</div></td>
+      <td><div>${c.resp||'—'}</div><div style="font-size:12px;color:var(--text-muted)">${c.email||'—'}</div></td>
+      <td class="td-mono" style="color:var(--purple-ultra)">${fmt(c.valor||0)}</td>
+      <td><span style="font-family:var(--mono);font-size:13px">${c.dia?'Dia '+c.dia:'—'}</span></td>
       <td>${badge(c.status)}</td>
       <td><button class="btn-icon" onclick="delCli(${c.id})">✕</button></td>
     </tr>`).join(''):'<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">⬡</div><div class="empty-title">Nenhum cliente</div><div class="empty-desc">Adicione seu primeiro cliente</div></div></td></tr>';
 }
-function salvarCli(){
+async function salvarCli(){
   const nome=document.getElementById('c-nome').value.trim();
   const valor=parseFloat(document.getElementById('c-valor').value);
   const dia=parseInt(document.getElementById('c-dia').value);
   if(!nome||!valor||!dia){toast('⚠ Preencha os campos obrigatórios','warn');return;}
-  const id=DB.clientes.length?Math.max(...DB.clientes.map(c=>c.id))+1:1;
-  DB.clientes.push({id,nome,resp:document.getElementById('c-resp').value,email:document.getElementById('c-email').value,tel:document.getElementById('c-tel').value,valor,dia,servico:document.getElementById('c-servico').value,status:document.getElementById('c-status').value});
-  save();closeModal('modal-cli');renderCli();renderDash();toast('✓ Cliente salvo!');
-  ['c-nome','c-resp','c-email','c-tel','c-valor','c-dia','c-servico'].forEach(id=>document.getElementById(id).value='');
+  const row={nome,responsavel:document.getElementById('c-resp').value,email:document.getElementById('c-email').value,telefone:document.getElementById('c-tel').value,cnpj:document.getElementById('c-cnpj').value,valor_mensal:valor,dia_pagamento:dia,servico:document.getElementById('c-servico').value,status:'ativo'};
+  if(sb&&!SUPA_URL.includes('COLE')){
+    const{data,error}=await sb.from('clientes').insert(row).select().single();
+    if(error){toast('⚠ Erro ao salvar: '+error.message,'err');return;}
+    DB.clientes.push({id:data.id,nome:data.nome,resp:data.responsavel,email:data.email,tel:data.telefone,cnpj:data.cnpj,valor:data.valor_mensal,dia:data.dia_pagamento,servico:data.servico,status:data.status});
+  } else {
+    const id=DB.clientes.length?Math.max(...DB.clientes.map(c=>c.id))+1:1;
+    DB.clientes.push({id,...row,resp:row.responsavel,tel:row.telefone,valor:row.valor_mensal,dia:row.dia_pagamento});
+    save(null,null);
+  }
+  closeModal('modal-cli');renderCli();renderDash();toast('✓ Cliente salvo!');
+  ['c-nome','c-resp','c-email','c-tel','c-cnpj','c-valor','c-dia','c-servico'].forEach(id=>document.getElementById(id).value='');
 }
-function delCli(id){if(!confirm('Remover este cliente?'))return;DB.clientes=DB.clientes.filter(c=>c.id!==id);save();renderCli();toast('Cliente removido','warn');}
+async function delCli(id){
+  if(!confirm('Remover este cliente?'))return;
+  if(sb&&!SUPA_URL.includes('COLE')) await sb.from('clientes').delete().eq('id',id);
+  DB.clientes=DB.clientes.filter(c=>c.id!==id);
+  save(null,null);renderCli();toast('Cliente removido','warn');
+}
 
 // NOTAS FISCAIS
 let nfFilt='',nfSFilt='';
@@ -630,18 +665,38 @@ function renderNF(){
       <td><button class="btn-icon" onclick="delNF(${n.id})">✕</button></td>
     </tr>`).join(''):'<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">▣</div><div class="empty-title">Nenhuma nota</div></div></td></tr>';
 }
-function updNFStatus(id,s){const n=DB.notas.find(n=>n.id===id);if(n){n.status=s;save();renderDash();renderAlertas();updateBadge();toast('✓ Status atualizado');}}
-function salvarNF(){
+async function updNFStatus(id,s){
+  const n=DB.notas.find(n=>n.id===id);
+  if(!n) return;
+  n.status=s;
+  if(sb&&!SUPA_URL.includes('COLE')) await sb.from('notas').update({status:s}).eq('id',id);
+  else save(null,null);
+  renderDash();renderAlertas();updateBadge();toast('✓ Status atualizado');
+}
+async function salvarNF(){
   const num=document.getElementById('n-num').value.trim();
   const cId=parseInt(document.getElementById('n-cli').value);
   const valor=parseFloat(document.getElementById('n-valor').value);
   if(!num||!cId||!valor){toast('⚠ Preencha os campos obrigatórios','warn');return;}
-  const id=DB.notas.length?Math.max(...DB.notas.map(n=>n.id))+1:1;
-  DB.notas.push({id,num,cId,desc:document.getElementById('n-desc').value,valor,emissao:document.getElementById('n-emissao').value,venc:document.getElementById('n-venc').value,status:document.getElementById('n-status').value,anexo:nfAnexoData||null,anexoNome:nfAnexoNome||null,anexoTipo:nfAnexoTipo||null});
+  const row={numero:num,cliente_id:cId,descricao:document.getElementById('n-desc').value,valor,data_emissao:document.getElementById('n-emissao').value,data_vencimento:document.getElementById('n-venc').value,status:document.getElementById('n-status').value,anexo_url:nfAnexoData||null,anexo_nome:nfAnexoNome||null,anexo_tipo:nfAnexoTipo||null};
+  if(sb&&!SUPA_URL.includes('COLE')){
+    const{data,error}=await sb.from('notas').insert(row).select().single();
+    if(error){toast('⚠ Erro: '+error.message,'err');return;}
+    DB.notas.push({id:data.id,num:data.numero,cId:data.cliente_id,desc:data.descricao,valor:data.valor,emissao:data.data_emissao,venc:data.data_vencimento,status:data.status,anexo:data.anexo_url,anexoNome:data.anexo_nome,anexoTipo:data.anexo_tipo});
+  } else {
+    const id=DB.notas.length?Math.max(...DB.notas.map(n=>n.id))+1:1;
+    DB.notas.push({id,num,cId,desc:row.descricao,valor,emissao:row.data_emissao,venc:row.data_vencimento,status:row.status,anexo:nfAnexoData||null,anexoNome:nfAnexoNome||null,anexoTipo:nfAnexoTipo||null});
+    save(null,null);
+  }
   nfAnexoData=null;nfAnexoNome=null;nfAnexoTipo=null;
-  save();closeModal('modal-nf');renderNF();renderDash();renderAlertas();updateBadge();toast('✓ Nota fiscal registrada!');
+  closeModal('modal-nf');renderNF();renderDash();renderAlertas();updateBadge();toast('✓ Nota fiscal registrada!');
 }
-function delNF(id){if(!confirm('Remover esta nota?'))return;DB.notas=DB.notas.filter(n=>n.id!==id);save();renderNF();renderDash();toast('Nota removida','warn');}
+async function delNF(id){
+  if(!confirm('Remover esta nota?'))return;
+  if(sb&&!SUPA_URL.includes('COLE')) await sb.from('notas').delete().eq('id',id);
+  DB.notas=DB.notas.filter(n=>n.id!==id);
+  save(null,null);renderNF();renderDash();toast('Nota removida','warn');
+}
 
 // LANÇAMENTOS
 let lFilt='';
@@ -672,16 +727,29 @@ function renderLanc(){
       <td><button class="btn-icon" onclick="delLanc(${l.id})">✕</button></td>
     </tr>`).join(''):'<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">💸</div><div class="empty-title">Nenhum lançamento</div><div class="empty-desc">Registre seu primeiro recebimento</div></div></td></tr>';
 }
-function salvarLanc(){
+async function salvarLanc(){
   const cId=parseInt(document.getElementById('l-cli').value);
   const valor=parseFloat(document.getElementById('l-valor').value);
   const data=document.getElementById('l-data').value;
   if(!cId||!valor||!data){toast('⚠ Preencha os campos obrigatórios','warn');return;}
-  const id=DB.lancs.length?Math.max(...DB.lancs.map(l=>l.id))+1:1;
-  DB.lancs.push({id,cId,valor,data,desc:document.getElementById('l-desc').value,nf:document.getElementById('l-nf').value});
-  save();closeModal('modal-lanc');renderLanc();renderDash();toast('✓ Lançamento registrado!');
+  const row={cliente_id:cId,valor,data,descricao:document.getElementById('l-desc').value,nf_numero:document.getElementById('l-nf').value};
+  if(sb&&!SUPA_URL.includes('COLE')){
+    const{data:d,error}=await sb.from('lancamentos').insert(row).select().single();
+    if(error){toast('⚠ Erro: '+error.message,'err');return;}
+    DB.lancs.push({id:d.id,cId:d.cliente_id,valor:d.valor,data:d.data,desc:d.descricao,nf:d.nf_numero});
+  } else {
+    const id=DB.lancs.length?Math.max(...DB.lancs.map(l=>l.id))+1:1;
+    DB.lancs.push({id,cId,valor,data,desc:row.descricao,nf:row.nf_numero});
+    save(null,null);
+  }
+  closeModal('modal-lanc');renderLanc();renderDash();toast('✓ Lançamento registrado!');
 }
-function delLanc(id){if(!confirm('Remover?'))return;DB.lancs=DB.lancs.filter(l=>l.id!==id);save();renderLanc();renderDash();toast('Lançamento removido','warn');}
+async function delLanc(id){
+  if(!confirm('Remover?'))return;
+  if(sb&&!SUPA_URL.includes('COLE')) await sb.from('lancamentos').delete().eq('id',id);
+  DB.lancs=DB.lancs.filter(l=>l.id!==id);
+  save(null,null);renderLanc();renderDash();toast('Lançamento removido','warn');
+}
 
 // RELATÓRIOS
 function renderRel(){
@@ -730,108 +798,25 @@ function handleNFFile(file) {
   if (!isPDF && !isImg) { toast('⚠ Use PDF ou imagem (PNG, JPG)', 'warn'); return; }
   if (file.size > 10 * 1024 * 1024) { toast('⚠ Arquivo muito grande (máx 10MB)', 'warn'); return; }
 
-  // Show loading
-  document.getElementById('nf-upload-idle').style.display = 'none';
-  document.getElementById('nf-upload-done').style.display = 'none';
-  document.getElementById('nf-upload-loading').style.display = 'block';
-
   const reader = new FileReader();
-  reader.onload = async (ev) => {
-    const base64 = ev.target.result.split(',')[1];
-    nfAnexoData = ev.target.result; // full data URL for preview
+  reader.onload = (ev) => {
+    nfAnexoData = ev.target.result;
     nfAnexoNome = file.name;
     nfAnexoTipo = file.type;
-
-    try {
-      await lerNFComIA(base64, file.type, isPDF);
-    } catch(err) {
-      toast('⚠ Erro ao ler com IA — preencha manualmente', 'warn');
-      console.error(err);
-    }
-
-    // Show done state
-    document.getElementById('nf-upload-loading').style.display = 'none';
+    document.getElementById('nf-upload-idle').style.display = 'none';
     document.getElementById('nf-upload-done').style.display = 'flex';
     document.getElementById('nf-file-name').textContent = file.name;
+    toast('📎 Arquivo anexado! Preencha os campos abaixo.');
   };
   reader.readAsDataURL(file);
 }
 
-async function lerNFComIA(base64, mimeType, isPDF) {
-  const clientesList = DB.clientes.map(c => c.nome).join(', ');
-  const today = new Date().toISOString().split('T')[0];
-
-  const msgContent = [
-    {
-      type: isPDF ? 'document' : 'image',
-      source: { type: 'base64', media_type: mimeType, data: base64 }
-    },
-    {
-      type: 'text',
-      text: `Você é um assistente que extrai dados de notas fiscais brasileiras (NFS-e, RPS, NFe, etc).
-
-Analise este documento e extraia as seguintes informações. Responda APENAS com um objeto JSON puro, sem markdown, sem texto antes ou depois:
-
-{
-  "numero": "número da nota fiscal (apenas dígitos, ex: 0042)",
-  "descricao": "descrição resumida do serviço prestado (máx 80 caracteres)",
-  "valor": 000.00,
-  "data_emissao": "YYYY-MM-DD",
-  "data_vencimento": "YYYY-MM-DD ou null se não encontrar",
-  "tomador": "nome da empresa ou pessoa que contratou o serviço (quem vai pagar)"
-}
-
-Clientes cadastrados no sistema: ${clientesList}
-Se o tomador corresponder a algum cliente cadastrado, use o nome exatamente como está na lista.
-Data de hoje para referência: ${today}
-Se algum campo não for encontrado, use null.`
-    }
-  ];
-
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 500,
-      messages: [{ role: 'user', content: msgContent }]
-    })
-  });
-
-  const data = await resp.json();
-  if (!data.content || !data.content[0]) throw new Error('Resposta vazia da IA');
-
-  let raw = data.content.map(b => b.text || '').join('').trim();
-  raw = raw.replace(/```json|```/g, '').trim();
-  const parsed = JSON.parse(raw);
-
-  // Fill form fields
-  if (parsed.numero) document.getElementById('n-num').value = parsed.numero;
-  if (parsed.descricao) document.getElementById('n-desc').value = parsed.descricao;
-  if (parsed.valor) document.getElementById('n-valor').value = parsed.valor;
-  if (parsed.data_emissao) document.getElementById('n-emissao').value = parsed.data_emissao;
-  if (parsed.data_vencimento) document.getElementById('n-venc').value = parsed.data_vencimento;
-
-  // Try to match client
-  if (parsed.tomador) {
-    const sel = document.getElementById('n-cli');
-    const tomLower = parsed.tomador.toLowerCase();
-    for (const opt of sel.options) {
-      if (opt.text.toLowerCase().includes(tomLower) || tomLower.includes(opt.text.toLowerCase())) {
-        opt.selected = true;
-        break;
-      }
-    }
-  }
-
-  toast('✓ Campos preenchidos automaticamente pela IA!');
-}
+// Leitura automática via IA removida — 100% gratuito
 
 function clearNFFile() {
   nfAnexoData = null; nfAnexoNome = null; nfAnexoTipo = null;
   document.getElementById('nf-file-input').value = '';
   document.getElementById('nf-upload-done').style.display = 'none';
-  document.getElementById('nf-upload-loading').style.display = 'none';
   document.getElementById('nf-upload-idle').style.display = 'block';
 }
 
@@ -867,6 +852,27 @@ function openModal(id) {
   if (id === 'modal-lanc') document.getElementById('l-data').value = new Date().toISOString().split('T')[0];
   document.getElementById(id).style.display = 'flex';
 }
+
+// LINK DE CADASTRO
+function copiarLinkCadastro(){
+  const base = window.location.href.replace('index.html','').replace(/\/$/, '');
+  const link = base + '/cadastro.html';
+  navigator.clipboard.writeText(link).then(()=>{
+    toast('✓ Link copiado! Envie para o cliente.');
+  }).catch(()=>{
+    prompt('Copie o link abaixo e envie para o cliente:', link);
+  });
+}
+
+function updatePendingBadge(){
+  const n = DB.clientes.filter(c=>c.status==='pendente').length;
+  const b = document.getElementById('pending-badge');
+  if(b){ b.textContent=n; b.style.display=n?'':'none'; }
+}
+
+// override renderAll to also update pending badge
+const _origRenderAll = renderAll;
+// =========================================
 
 // spin animation for loading icon
 const spinStyle = document.createElement('style');
