@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Meu Extrato — MEI Flow</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{
+  --black:#080810;--dark2:#13131f;--dark3:#1a1a2e;
+  --purple:#7c3aed;--purple-ultra:#c084fc;--accent:#e879f9;
+  --border:rgba(124,58,237,0.2);--border-strong:rgba(124,58,237,0.4);
+  --text:#f0effe;--text-muted:#8b8aaa;--text-dim:#4a4a6a;
+  --success:#34d399;--warning:#fbbf24;--danger:#f87171;--info:#60a5fa;
+  --radius:12px;--radius-sm:8px;--radius-lg:16px;
+  --font:'Space Grotesk',sans-serif;--mono:'JetBrains Mono',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:var(--font);background:var(--black);color:var(--text);min-height:100vh;padding:2rem 1rem;}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(124,58,237,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(124,58,237,0.03) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;}
+body::after{content:'';position:fixed;top:-200px;right:-200px;width:500px;height:500px;background:radial-gradient(circle,rgba(124,58,237,0.1) 0%,transparent 70%);pointer-events:none;}
+.wrap{max-width:680px;margin:0 auto;position:relative;z-index:1;}
+.logo{display:flex;align-items:center;gap:10px;margin-bottom:2rem;}
+.logo-icon{width:36px;height:36px;background:linear-gradient(135deg,var(--purple),var(--accent));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;}
+.logo-text{font-size:18px;font-weight:700;letter-spacing:-.5px;}
+.logo-text span{color:var(--purple-ultra);}
+.card{background:var(--dark2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.5rem;margin-bottom:1rem;position:relative;overflow:hidden;}
+.card-glow::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--purple),transparent);}
+.metric-row{display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem;margin-bottom:1rem;}
+.metric{background:var(--dark3);border-radius:10px;padding:.875rem;}
+.metric-label{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;}
+.metric-value{font-size:20px;font-weight:700;font-family:var(--mono);}
+.section-label{font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin:1rem 0 .75rem;display:flex;align-items:center;gap:8px;}
+.section-label::after{content:'';flex:1;height:1px;background:var(--border);}
+.item{display:flex;align-items:center;justify-content:space-between;padding:.75rem 1rem;background:var(--dark3);border-radius:8px;margin-bottom:.5rem;gap:.5rem;flex-wrap:wrap;}
+.item-left{flex:1;}
+.item-title{font-size:13px;font-weight:500;}
+.item-sub{font-size:12px;color:var(--text-muted);margin-top:2px;}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:600;}
+.badge::before{content:'●';font-size:7px;}
+.badge-paga{background:rgba(52,211,153,.1);color:var(--success);border:1px solid rgba(52,211,153,.2);}
+.badge-enviada{background:rgba(96,165,250,.1);color:var(--info);border:1px solid rgba(96,165,250,.2);}
+.badge-emitida{background:rgba(124,58,237,.15);color:var(--purple-ultra);border:1px solid var(--border);}
+.badge-atrasada{background:rgba(248,113,113,.1);color:var(--danger);border:1px solid rgba(248,113,113,.2);}
+.empty{text-align:center;padding:2rem;color:var(--text-muted);font-size:13px;}
+.loading{text-align:center;padding:4rem;color:var(--text-muted);}
+.error-state{text-align:center;padding:3rem 1rem;}
+.prestador-footer{text-align:center;margin-top:2rem;padding-top:1rem;border-top:1px solid var(--border);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="logo">
+    <div class="logo-icon">⚡</div>
+    <div class="logo-text">MEI <span>Flow</span></div>
+  </div>
+  <div id="root"><div class="loading">Carregando seu extrato...</div></div>
+</div>
+
+<script>
+const SUPA_URL = 'https://njyvntmtempjgteezowc.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qeXZudG10ZW1wamd0ZWV6b3djIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwMzY3MTgsImV4cCI6MjA5NjYxMjcxOH0.pbFRrjhHgLIeqV8DG3MgvzvGsHrFv_xbdhcoVxNtT94';
+
+const PRESTADOR = { nome: 'Lucas Teles', cnpj: '66.888.248/0001-49' };
+
+const fmt = v => 'R$ ' + Number(v).toLocaleString('pt-BR', {minimumFractionDigits:2,maximumFractionDigits:2});
+const fd = d => { if(!d) return '—'; const [y,m,day]=d.split('-'); return `${day}/${m}/${y}`; };
+
+const params = new URLSearchParams(window.location.search);
+const clienteId = params.get('id');
+
+async function init() {
+  if (!clienteId) {
+    document.getElementById('root').innerHTML = `<div class="error-state"><div style="font-size:40px;margin-bottom:1rem;opacity:.3">🔗</div><div style="font-size:16px;font-weight:500;margin-bottom:.5rem">Link inválido</div><div style="font-size:13px;color:var(--text-muted)">Peça um novo link para o seu prestador de serviço.</div></div>`;
+    return;
+  }
+
+  let sb;
+  try { sb = supabase.createClient(SUPA_URL, SUPA_KEY); } catch(e) { return; }
+
+  const [{ data: cliente }, { data: notas }, { data: lancs }] = await Promise.all([
+    sb.from('clientes').select('*').eq('id', clienteId).single(),
+    sb.from('notas').select('*').eq('cliente_id', clienteId).order('data_emissao', {ascending:false}),
+    sb.from('lancamentos').select('*').eq('cliente_id', clienteId).order('data', {ascending:false}),
+  ]);
+
+  if (!cliente) {
+    document.getElementById('root').innerHTML = `<div class="error-state"><div style="font-size:40px;margin-bottom:1rem;opacity:.3">👤</div><div style="font-size:16px;font-weight:500">Cliente não encontrado</div></div>`;
+    return;
+  }
+
+  document.title = `Extrato — ${cliente.nome}`;
+
+  const totalPago = (lancs||[]).reduce((s,l) => s + Number(l.valor), 0);
+  const totalPendente = (notas||[]).filter(n => n.status !== 'paga').reduce((s,n) => s + Number(n.valor), 0);
+
+  const badgeClass = { paga:'badge-paga', enviada:'badge-enviada', emitida:'badge-emitida', atrasada:'badge-atrasada' };
+  const badgeLabel = { paga:'Paga', enviada:'Enviada', emitida:'Emitida', atrasada:'Atrasada' };
+
+  document.getElementById('root').innerHTML = `
+    <!-- CABEÇALHO CLIENTE -->
+    <div class="card card-glow">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem">
+        <div>
+          <div style="font-size:20px;font-weight:700;letter-spacing:-.5px">${cliente.nome}</div>
+          ${cliente.cnpj ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px">CNPJ/CPF: ${cliente.cnpj}</div>` : ''}
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:11px;color:var(--text-muted)">Serviço contratado</div>
+          <div style="font-size:13px;font-weight:500;color:var(--purple-ultra)">${cliente.servico || '—'}</div>
+        </div>
+      </div>
+      <div class="metric-row">
+        <div class="metric">
+          <div class="metric-label">Total pago</div>
+          <div class="metric-value" style="color:var(--success)">${fmt(totalPago)}</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Pendente</div>
+          <div class="metric-value" style="color:${totalPendente > 0 ? 'var(--warning)' : 'var(--success)'}">${fmt(totalPendente)}</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Notas emitidas</div>
+          <div class="metric-value" style="color:var(--purple-ultra)">${(notas||[]).length}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- NOTAS FISCAIS -->
+    <div class="card">
+      <div class="section-label">Notas fiscais</div>
+      ${(notas||[]).length ? (notas||[]).map(n => `
+        <div class="item">
+          <div class="item-left">
+            <div class="item-title"><span style="font-family:var(--mono);color:var(--purple-ultra)">NF ${n.numero}</span> · ${n.descricao || '—'}</div>
+            <div class="item-sub">Emissão: ${fd(n.data_emissao)} · Vencimento: ${fd(n.data_vencimento)}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:.75rem">
+            <div style="font-family:var(--mono);font-size:15px;font-weight:600">${fmt(n.valor)}</div>
+            <span class="badge ${badgeClass[n.status]||'badge-emitida'}">${badgeLabel[n.status]||n.status}</span>
+          </div>
+        </div>`).join('') : '<div class="empty">Nenhuma nota fiscal emitida ainda.</div>'}
+    </div>
+
+    <!-- PAGAMENTOS -->
+    <div class="card">
+      <div class="section-label">Pagamentos recebidos</div>
+      ${(lancs||[]).length ? (lancs||[]).map(l => `
+        <div class="item">
+          <div class="item-left">
+            <div class="item-title">${l.descricao || 'Pagamento recebido'}</div>
+            <div class="item-sub">${fd(l.data)}${l.nf_numero ? ' · ' + l.nf_numero : ''}</div>
+          </div>
+          <div style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--success)">${fmt(l.valor)}</div>
+        </div>`).join('') : '<div class="empty">Nenhum pagamento registrado ainda.</div>'}
+    </div>
+
+    <!-- RODAPÉ -->
+    <div class="prestador-footer">
+      <div style="font-size:12px;color:var(--text-muted)">Emitido por <strong style="color:var(--text)">${PRESTADOR.nome}</strong> · CNPJ ${PRESTADOR.cnpj}</div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:4px">Gerado em ${new Date().toLocaleDateString('pt-BR')} · MEI Flow</div>
+    </div>
+  `;
+}
+
+init();
+</script>
+</body>
+</html>
