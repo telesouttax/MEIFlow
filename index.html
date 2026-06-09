@@ -277,7 +277,7 @@ tr:hover td{background:rgba(124,58,237,.04);}
         <div class="search-wrap"><span class="search-icon">🔍</span><input type="text" placeholder="Buscar nota..." oninput="filterNF(this.value)"></div>
         <select onchange="filterNFStatus(this.value)"><option value="">Todos os status</option><option value="emitida">Emitida</option><option value="enviada">Enviada</option><option value="paga">Paga</option><option value="atrasada">Atrasada</option></select>
       </div>
-      <div class="card"><div class="table-wrap"><table><thead><tr><th>Nº NF</th><th>Cliente</th><th>Descrição</th><th>Valor</th><th>Emissão</th><th>Vencimento</th><th>Status</th><th></th></tr></thead><tbody id="nf-table"></tbody></table></div></div>
+      <div class="card"><div class="table-wrap"><table><thead><tr><th>Nº NF</th><th>Cliente</th><th>Descrição</th><th>Valor</th><th>Emissão</th><th>Vencimento</th><th>Status</th><th>Anexo</th><th></th></tr></thead><tbody id="nf-table"></tbody></table></div></div>
     </section>
 
     <!-- LANÇAMENTOS -->
@@ -332,9 +332,34 @@ tr:hover td{background:rgba(124,58,237,.04);}
 
 <!-- MODAL NOTA FISCAL -->
 <div class="modal-overlay" id="modal-nf" style="display:none" onclick="if(event.target===this)closeModal('modal-nf')">
-  <div class="modal">
+  <div class="modal" style="max-width:560px">
     <div class="modal-title">Nova nota fiscal</div>
     <button class="modal-close" onclick="closeModal('modal-nf')">✕</button>
+
+    <!-- UPLOAD ZONE -->
+    <div id="nf-upload-zone" style="border:1.5px dashed var(--border-strong);border-radius:var(--radius);padding:1.5rem;text-align:center;cursor:pointer;transition:all .2s;margin-bottom:1.25rem" onclick="document.getElementById('nf-file-input').click()" ondragover="event.preventDefault();this.style.borderColor='var(--purple)'" ondragleave="this.style.borderColor='var(--border-strong)'" ondrop="handleNFDrop(event)">
+      <input type="file" id="nf-file-input" accept=".pdf,image/*" style="display:none" onchange="handleNFFile(this.files[0])">
+      <div id="nf-upload-idle">
+        <div style="font-size:28px;margin-bottom:.5rem;opacity:.5">📎</div>
+        <div style="font-size:14px;font-weight:500;color:var(--text-muted)">Anexar nota fiscal</div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:4px">PDF ou imagem · arraste ou clique · a IA preenche os campos automaticamente</div>
+      </div>
+      <div id="nf-upload-loading" style="display:none">
+        <div style="font-size:24px;margin-bottom:.5rem;animation:spin 1s linear infinite;display:inline-block">⚡</div>
+        <div style="font-size:14px;font-weight:500;color:var(--purple-ultra)">Lendo nota fiscal...</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Extraindo informações com IA</div>
+      </div>
+      <div id="nf-upload-done" style="display:none;flex-direction:row;align-items:center;gap:12px;text-align:left">
+        <div style="font-size:28px">📄</div>
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:500;color:var(--success)" id="nf-file-name"></div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:2px">Campos preenchidos · clique para trocar o arquivo</div>
+        </div>
+        <button onclick="event.stopPropagation();clearNFFile()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:16px;padding:4px">✕</button>
+      </div>
+    </div>
+
+    <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem;display:flex;align-items:center;gap:8px"><span>Dados da nota</span><div style="flex:1;height:1px;background:var(--border)"></div></div>
     <div class="form-row">
       <div class="form-group"><label>Nº da nota *</label><input type="text" id="n-num" placeholder="0042"></div>
       <div class="form-group"><label>Cliente *</label><select id="n-cli"></select></div>
@@ -352,6 +377,15 @@ tr:hover td{background:rgba(124,58,237,.04);}
       <button class="btn btn-ghost" onclick="closeModal('modal-nf')">Cancelar</button>
       <button class="btn btn-primary" style="width:auto" onclick="salvarNF()">Salvar nota</button>
     </div>
+  </div>
+</div>
+
+<!-- MODAL VISUALIZAR ANEXO -->
+<div class="modal-overlay" id="modal-anexo" style="display:none" onclick="if(event.target===this)closeModal('modal-anexo')">
+  <div class="modal" style="max-width:720px">
+    <div class="modal-title" id="anexo-title">Nota fiscal</div>
+    <button class="modal-close" onclick="closeModal('modal-anexo')">✕</button>
+    <div id="anexo-viewer" style="margin-top:.5rem;border-radius:var(--radius-sm);background:var(--dark3);overflow:auto;min-height:300px;max-height:75vh;display:flex;align-items:center;justify-content:center"></div>
   </div>
 </div>
 
@@ -427,8 +461,8 @@ function toast(msg,t='ok'){
 // =========================================
 // SUAS CREDENCIAIS — edite aqui
 // =========================================
-const MEU_EMAIL = 'teles.designr@gmail.com';   // 👈 troque pelo seu e-mail
-const MINHA_SENHA = '154263Lucas@';   // 👈 troque pela sua senha
+const MEU_EMAIL = 'seu@email.com';   // 👈 troque pelo seu e-mail
+const MINHA_SENHA = 'suasenha123';   // 👈 troque pela sua senha
 // =========================================
 
 // AUTH
@@ -475,18 +509,7 @@ function goTo(id,el){
 }
 
 // MODAL
-function openModal(id){
-  if(id==='modal-nf'||id==='modal-lanc')fillCliSel(id);
-  if(id==='modal-nf'){
-    document.getElementById('n-emissao').value=new Date().toISOString().split('T')[0];
-    const nxt=new Date();nxt.setDate(nxt.getDate()+10);
-    document.getElementById('n-venc').value=nxt.toISOString().split('T')[0];
-    const mx=DB.notas.length?Math.max(...DB.notas.map(n=>parseInt(n.num)||0)):40;
-    document.getElementById('n-num').value=String(mx+1).padStart(4,'0');
-  }
-  if(id==='modal-lanc')document.getElementById('l-data').value=new Date().toISOString().split('T')[0];
-  document.getElementById(id).style.display='flex';
-}
+// openModal defined below with upload support
 function closeModal(id){document.getElementById(id).style.display='none';}
 function fillCliSel(mid){
   const px=mid==='modal-nf'?'n':'l';
@@ -603,8 +626,9 @@ function renderNF(){
       <td>${fd(n.emissao)}</td>
       <td>${fd(n.venc)}</td>
       <td><select onchange="updNFStatus(${n.id},this.value)" style="margin:0;padding:4px 8px;font-size:12px;width:auto">${['emitida','enviada','paga','atrasada'].map(s=>`<option value="${s}" ${n.status===s?'selected':''}>${s.charAt(0).toUpperCase()+s.slice(1)}</option>`).join('')}</select></td>
+      <td>${n.anexo ? `<button class="btn-ghost btn-sm btn" onclick="verAnexo(${n.id})" style="gap:4px;font-size:12px">📎 Ver</button>` : '<span style="color:var(--text-dim);font-size:12px">—</span>'}</td>
       <td><button class="btn-icon" onclick="delNF(${n.id})">✕</button></td>
-    </tr>`).join(''):'<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">▣</div><div class="empty-title">Nenhuma nota</div></div></td></tr>';
+    </tr>`).join(''):'<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">▣</div><div class="empty-title">Nenhuma nota</div></div></td></tr>';
 }
 function updNFStatus(id,s){const n=DB.notas.find(n=>n.id===id);if(n){n.status=s;save();renderDash();renderAlertas();updateBadge();toast('✓ Status atualizado');}}
 function salvarNF(){
@@ -613,7 +637,8 @@ function salvarNF(){
   const valor=parseFloat(document.getElementById('n-valor').value);
   if(!num||!cId||!valor){toast('⚠ Preencha os campos obrigatórios','warn');return;}
   const id=DB.notas.length?Math.max(...DB.notas.map(n=>n.id))+1:1;
-  DB.notas.push({id,num,cId,desc:document.getElementById('n-desc').value,valor,emissao:document.getElementById('n-emissao').value,venc:document.getElementById('n-venc').value,status:document.getElementById('n-status').value});
+  DB.notas.push({id,num,cId,desc:document.getElementById('n-desc').value,valor,emissao:document.getElementById('n-emissao').value,venc:document.getElementById('n-venc').value,status:document.getElementById('n-status').value,anexo:nfAnexoData||null,anexoNome:nfAnexoNome||null,anexoTipo:nfAnexoTipo||null});
+  nfAnexoData=null;nfAnexoNome=null;nfAnexoTipo=null;
   save();closeModal('modal-nf');renderNF();renderDash();renderAlertas();updateBadge();toast('✓ Nota fiscal registrada!');
 }
 function delNF(id){if(!confirm('Remover esta nota?'))return;DB.notas=DB.notas.filter(n=>n.id!==id);save();renderNF();renderDash();toast('Nota removida','warn');}
@@ -683,6 +708,171 @@ function renderRel(){
     </div>
   `;
 }
+
+// =========================================
+// UPLOAD & IA — NOTAS FISCAIS
+// =========================================
+let nfAnexoData = null;
+let nfAnexoNome = null;
+let nfAnexoTipo = null;
+
+function handleNFDrop(e) {
+  e.preventDefault();
+  e.currentTarget.style.borderColor = 'var(--border-strong)';
+  const file = e.dataTransfer.files[0];
+  if (file) handleNFFile(file);
+}
+
+function handleNFFile(file) {
+  if (!file) return;
+  const isPDF = file.type === 'application/pdf';
+  const isImg = file.type.startsWith('image/');
+  if (!isPDF && !isImg) { toast('⚠ Use PDF ou imagem (PNG, JPG)', 'warn'); return; }
+  if (file.size > 10 * 1024 * 1024) { toast('⚠ Arquivo muito grande (máx 10MB)', 'warn'); return; }
+
+  // Show loading
+  document.getElementById('nf-upload-idle').style.display = 'none';
+  document.getElementById('nf-upload-done').style.display = 'none';
+  document.getElementById('nf-upload-loading').style.display = 'block';
+
+  const reader = new FileReader();
+  reader.onload = async (ev) => {
+    const base64 = ev.target.result.split(',')[1];
+    nfAnexoData = ev.target.result; // full data URL for preview
+    nfAnexoNome = file.name;
+    nfAnexoTipo = file.type;
+
+    try {
+      await lerNFComIA(base64, file.type, isPDF);
+    } catch(err) {
+      toast('⚠ Erro ao ler com IA — preencha manualmente', 'warn');
+      console.error(err);
+    }
+
+    // Show done state
+    document.getElementById('nf-upload-loading').style.display = 'none';
+    document.getElementById('nf-upload-done').style.display = 'flex';
+    document.getElementById('nf-file-name').textContent = file.name;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function lerNFComIA(base64, mimeType, isPDF) {
+  const clientesList = DB.clientes.map(c => c.nome).join(', ');
+  const today = new Date().toISOString().split('T')[0];
+
+  const msgContent = [
+    {
+      type: isPDF ? 'document' : 'image',
+      source: { type: 'base64', media_type: mimeType, data: base64 }
+    },
+    {
+      type: 'text',
+      text: `Você é um assistente que extrai dados de notas fiscais brasileiras (NFS-e, RPS, NFe, etc).
+
+Analise este documento e extraia as seguintes informações. Responda APENAS com um objeto JSON puro, sem markdown, sem texto antes ou depois:
+
+{
+  "numero": "número da nota fiscal (apenas dígitos, ex: 0042)",
+  "descricao": "descrição resumida do serviço prestado (máx 80 caracteres)",
+  "valor": 000.00,
+  "data_emissao": "YYYY-MM-DD",
+  "data_vencimento": "YYYY-MM-DD ou null se não encontrar",
+  "tomador": "nome da empresa ou pessoa que contratou o serviço (quem vai pagar)"
+}
+
+Clientes cadastrados no sistema: ${clientesList}
+Se o tomador corresponder a algum cliente cadastrado, use o nome exatamente como está na lista.
+Data de hoje para referência: ${today}
+Se algum campo não for encontrado, use null.`
+    }
+  ];
+
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 500,
+      messages: [{ role: 'user', content: msgContent }]
+    })
+  });
+
+  const data = await resp.json();
+  if (!data.content || !data.content[0]) throw new Error('Resposta vazia da IA');
+
+  let raw = data.content.map(b => b.text || '').join('').trim();
+  raw = raw.replace(/```json|```/g, '').trim();
+  const parsed = JSON.parse(raw);
+
+  // Fill form fields
+  if (parsed.numero) document.getElementById('n-num').value = parsed.numero;
+  if (parsed.descricao) document.getElementById('n-desc').value = parsed.descricao;
+  if (parsed.valor) document.getElementById('n-valor').value = parsed.valor;
+  if (parsed.data_emissao) document.getElementById('n-emissao').value = parsed.data_emissao;
+  if (parsed.data_vencimento) document.getElementById('n-venc').value = parsed.data_vencimento;
+
+  // Try to match client
+  if (parsed.tomador) {
+    const sel = document.getElementById('n-cli');
+    const tomLower = parsed.tomador.toLowerCase();
+    for (const opt of sel.options) {
+      if (opt.text.toLowerCase().includes(tomLower) || tomLower.includes(opt.text.toLowerCase())) {
+        opt.selected = true;
+        break;
+      }
+    }
+  }
+
+  toast('✓ Campos preenchidos automaticamente pela IA!');
+}
+
+function clearNFFile() {
+  nfAnexoData = null; nfAnexoNome = null; nfAnexoTipo = null;
+  document.getElementById('nf-file-input').value = '';
+  document.getElementById('nf-upload-done').style.display = 'none';
+  document.getElementById('nf-upload-loading').style.display = 'none';
+  document.getElementById('nf-upload-idle').style.display = 'block';
+}
+
+function verAnexo(nfId) {
+  const n = DB.notas.find(x => x.id === nfId);
+  if (!n || !n.anexo) return;
+  document.getElementById('anexo-title').textContent = 'NF ' + n.num + ' — ' + (n.anexoNome || 'Anexo');
+  const viewer = document.getElementById('anexo-viewer');
+  if (n.anexoTipo === 'application/pdf') {
+    viewer.innerHTML = `<iframe src="${n.anexo}" style="width:100%;height:70vh;border:none;border-radius:var(--radius-sm)"></iframe>`;
+  } else {
+    viewer.innerHTML = `<img src="${n.anexo}" style="max-width:100%;max-height:70vh;border-radius:var(--radius-sm);object-fit:contain">`;
+  }
+  openModal('modal-anexo');
+}
+
+// Reset upload zone when opening NF modal
+const _origOpen = openModal;
+// patch openModal to reset upload state on modal-nf
+const _patchedOpen = openModal;
+function openModal(id) {
+  if (id === 'modal-nf') {
+    clearNFFile();
+  }
+  if (id === 'modal-nf' || id === 'modal-lanc') fillCliSel(id);
+  if (id === 'modal-nf') {
+    document.getElementById('n-emissao').value = new Date().toISOString().split('T')[0];
+    const nxt = new Date(); nxt.setDate(nxt.getDate()+10);
+    document.getElementById('n-venc').value = nxt.toISOString().split('T')[0];
+    const mx = DB.notas.length ? Math.max(...DB.notas.map(n=>parseInt(n.num)||0)) : 40;
+    document.getElementById('n-num').value = String(mx+1).padStart(4,'0');
+  }
+  if (id === 'modal-lanc') document.getElementById('l-data').value = new Date().toISOString().split('T')[0];
+  document.getElementById(id).style.display = 'flex';
+}
+
+// spin animation for loading icon
+const spinStyle = document.createElement('style');
+spinStyle.textContent = '@keyframes spin{to{transform:rotate(360deg)}}';
+document.head.appendChild(spinStyle);
+
 </script>
 </body>
 </html>
