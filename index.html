@@ -296,7 +296,7 @@ tr:hover td{background:rgba(124,58,237,.04);}
         <div class="search-wrap"><span class="search-icon">🔍</span><input type="text" placeholder="Buscar..." oninput="filterLanc(this.value)"></div>
         <select id="lanc-mes-filter" onchange="renderLanc()"></select>
       </div>
-      <div class="card"><div class="table-wrap"><table><thead><tr><th>Data</th><th>Cliente</th><th>Descrição</th><th>Valor</th><th>NF</th><th></th></tr></thead><tbody id="lanc-table"></tbody></table></div></div>
+      <div class="card"><div class="table-wrap"><table><thead><tr><th>Data</th><th>Cliente</th><th>Descrição</th><th>Valor</th><th>NF</th><th>Ações</th></tr></thead><tbody id="lanc-table"></tbody></table></div></div>
     </section>
 
     <!-- RELATÓRIOS -->
@@ -403,6 +403,53 @@ tr:hover td{background:rgba(124,58,237,.04);}
   </div>
 </div>
 
+<!-- MODAL COMPROVANTE + WHATSAPP -->
+<div class="modal-overlay" id="modal-comprov" style="display:none" onclick="if(event.target===this)closeModal('modal-comprov')">
+  <div class="modal" style="max-width:520px">
+    <input type="hidden" id="comp-lanc-id">
+    <div class="modal-title">Confirmar recebimento</div>
+    <button class="modal-close" onclick="closeModal('modal-comprov')">✕</button>
+
+    <!-- INFO DO LANÇAMENTO -->
+    <div id="comp-info" style="background:var(--dark3);border-radius:var(--radius-sm);padding:1rem;margin-bottom:1.25rem;display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div style="font-size:13px;font-weight:500" id="comp-cliente"></div>
+        <div style="font-size:12px;color:var(--text-muted)" id="comp-desc"></div>
+      </div>
+      <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--success)" id="comp-valor"></div>
+    </div>
+
+    <!-- UPLOAD COMPROVANTE -->
+    <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem;display:flex;align-items:center;gap:8px"><span>Comprovante</span><div style="flex:1;height:1px;background:var(--border)"></div></div>
+    <div id="comp-upload-zone" style="border:1.5px dashed var(--border-strong);border-radius:var(--radius);padding:1.25rem;text-align:center;cursor:pointer;transition:all .2s;margin-bottom:1.25rem" onclick="document.getElementById('comp-file-input').click()" ondragover="event.preventDefault();this.style.borderColor='var(--purple)'" ondragleave="this.style.borderColor='var(--border-strong)'" ondrop="handleCompDrop(event)">
+      <input type="file" id="comp-file-input" accept=".pdf,image/*" style="display:none" onchange="handleCompFile(this.files[0])">
+      <div id="comp-idle">
+        <div style="font-size:24px;opacity:.4;margin-bottom:.25rem">📎</div>
+        <div style="font-size:13px;color:var(--text-muted)">Anexar comprovante (opcional)</div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:3px">PDF ou imagem</div>
+      </div>
+      <div id="comp-done" style="display:none;flex-direction:row;align-items:center;gap:10px;text-align:left">
+        <div style="font-size:22px">📄</div>
+        <div style="flex:1;font-size:13px;font-weight:500;color:var(--success)" id="comp-file-name"></div>
+        <button onclick="event.stopPropagation();clearComp()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:16px">✕</button>
+      </div>
+    </div>
+
+    <!-- WHATSAPP -->
+    <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem;display:flex;align-items:center;gap:8px"><span>Mensagem WhatsApp</span><div style="flex:1;height:1px;background:var(--border)"></div></div>
+    <textarea id="comp-msg" rows="4" style="font-size:13px;line-height:1.6;resize:vertical;margin-bottom:1rem" placeholder="Mensagem para o cliente..."></textarea>
+
+    <div class="form-actions" style="flex-direction:column;gap:.75rem">
+      <button class="btn btn-primary" style="width:100%;background:linear-gradient(135deg,#25D366,#128C7E)" onclick="enviarWhatsApp()">
+        <span style="font-size:16px">💬</span> Abrir WhatsApp e enviar mensagem
+      </button>
+      <button class="btn btn-ghost" style="width:100%" onclick="salvarComprovante()">
+        Salvar comprovante sem enviar WhatsApp
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL LANÇAMENTO -->
 <div class="modal-overlay" id="modal-lanc" style="display:none" onclick="if(event.target===this)closeModal('modal-lanc')">
   <div class="modal">
@@ -453,7 +500,7 @@ async function dbLoad() {
     ]);
     DB.clientes = (c.data||[]).map(x=>({id:x.id,nome:x.nome,resp:x.responsavel,email:x.email,tel:x.telefone,cnpj:x.cnpj,valor:x.valor_mensal,dia:x.dia_pagamento,servico:x.servico,status:x.status||'pendente'}));
     DB.notas    = (n.data||[]).map(x=>({id:x.id,num:x.numero,cId:x.cliente_id,desc:x.descricao,valor:x.valor,emissao:x.data_emissao,venc:x.data_vencimento,status:x.status,anexo:x.anexo_url,anexoNome:x.anexo_nome,anexoTipo:x.anexo_tipo}));
-    DB.lancs    = (l.data||[]).map(x=>({id:x.id,cId:x.cliente_id,desc:x.descricao,valor:x.valor,data:x.data,nf:x.nf_numero}));
+    DB.lancs    = (l.data||[]).map(x=>({id:x.id,cId:x.cliente_id,desc:x.descricao,valor:x.valor,data:x.data,nf:x.nf_numero,comprovante:x.comprovante_url,comprovanteNome:x.comprovante_nome,comprovanteTipo:x.comprovante_tipo}));
   } catch(e) { console.error('Supabase load error', e); }
 }
 
@@ -773,7 +820,12 @@ function renderLanc(){
       <td style="font-size:13px;color:var(--text-muted)">${l.desc}</td>
       <td class="td-mono" style="color:var(--success)">${fmt(l.valor)}</td>
       <td style="font-size:12px;font-family:var(--mono);color:var(--text-muted)">${l.nf||'—'}</td>
-      <td><button class="btn-icon" onclick="delLanc(${l.id})">✕</button></td>
+      <td style="display:flex;gap:6px;align-items:center">
+        <button class="btn btn-ghost btn-sm" onclick="abrirComprovante(${l.id})" style="font-size:12px;gap:4px;white-space:nowrap">
+          ${l.comprovante ? '📎 Ver comprov.' : '💬 Confirmar pgto'}
+        </button>
+        <button class="btn-icon" onclick="delLanc(${l.id})">✕</button>
+      </td>
     </tr>`).join(''):'<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">💸</div><div class="empty-title">Nenhum lançamento</div><div class="empty-desc">Registre seu primeiro recebimento</div></div></td></tr>';
 }
 async function salvarLanc(){
@@ -785,7 +837,7 @@ async function salvarLanc(){
   if(sb&&!SUPA_URL.includes('COLE')){
     const{data:d,error}=await sb.from('lancamentos').insert(row).select().single();
     if(error){toast('⚠ Erro: '+error.message,'err');return;}
-    DB.lancs.push({id:d.id,cId:d.cliente_id,valor:d.valor,data:d.data,desc:d.descricao,nf:d.nf_numero});
+    DB.lancs.push({id:d.id,cId:d.cliente_id,valor:d.valor,data:d.data,desc:d.descricao,nf:d.nf_numero,comprovante:null,comprovanteNome:null,comprovanteTipo:null});
   } else {
     const id=DB.lancs.length?Math.max(...DB.lancs.map(l=>l.id))+1:1;
     DB.lancs.push({id,cId,valor,data,desc:row.descricao,nf:row.nf_numero});
@@ -932,6 +984,135 @@ function updatePendingBadge(){
 // override renderAll to also update pending badge
 const _origRenderAll = renderAll;
 // =========================================
+
+// =========================================
+// COMPROVANTE + WHATSAPP
+// =========================================
+let compData = null, compNome = null, compTipo = null;
+
+function abrirComprovante(lancId) {
+  const l = DB.lancs.find(x => x.id == lancId);
+  if (!l) return;
+  const c = DB.clientes.find(x => x.id == l.cId);
+  document.getElementById('comp-lanc-id').value = lancId;
+  document.getElementById('comp-cliente').textContent = cNome(l.cId);
+  document.getElementById('comp-desc').textContent = l.desc || (l.nf ? 'NF ' + l.nf : 'Pagamento');
+  document.getElementById('comp-valor').textContent = fmt(l.valor);
+
+  // Pre-fill WhatsApp message
+  const nome = c ? (c.resp || c.nome) : cNome(l.cId);
+  const dataFmt = fd(l.data);
+  document.getElementById('comp-msg').value =
+    `Olá, ${nome}! 😊
+
+Passando para confirmar que recebemos o seu pagamento de ${fmt(l.valor)} com sucesso, referente a ${l.desc || 'serviços prestados'}${l.nf ? ' (NF ' + l.nf + ')' : ''}.
+
+Data: ${dataFmt}
+
+Obrigado pela confiança! 🙏`;
+
+  // If already has comprovante, show it
+  if (l.comprovante) {
+    compData = l.comprovante;
+    compNome = l.comprovanteNome || 'Comprovante';
+    compTipo = l.comprovanteTipo || 'image/png';
+    document.getElementById('comp-idle').style.display = 'none';
+    document.getElementById('comp-done').style.display = 'flex';
+    document.getElementById('comp-file-name').textContent = compNome;
+  } else {
+    clearComp();
+  }
+
+  document.getElementById('modal-comprov').style.display = 'flex';
+}
+
+function handleCompDrop(e) {
+  e.preventDefault();
+  e.currentTarget.style.borderColor = 'var(--border-strong)';
+  const file = e.dataTransfer.files[0];
+  if (file) handleCompFile(file);
+}
+
+function handleCompFile(file) {
+  if (!file) return;
+  if (!file.type.startsWith('image/') && file.type !== 'application/pdf') {
+    toast('⚠ Use PDF ou imagem', 'warn'); return;
+  }
+  if (file.size > 10 * 1024 * 1024) { toast('⚠ Arquivo muito grande (máx 10MB)', 'warn'); return; }
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    compData = ev.target.result;
+    compNome = file.name;
+    compTipo = file.type;
+    document.getElementById('comp-idle').style.display = 'none';
+    document.getElementById('comp-done').style.display = 'flex';
+    document.getElementById('comp-file-name').textContent = file.name;
+    toast('📎 Comprovante anexado!');
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearComp() {
+  compData = null; compNome = null; compTipo = null;
+  document.getElementById('comp-file-input').value = '';
+  document.getElementById('comp-done').style.display = 'none';
+  document.getElementById('comp-idle').style.display = 'block';
+}
+
+async function salvarComprovante() {
+  const lancId = document.getElementById('comp-lanc-id').value;
+  const l = DB.lancs.find(x => x.id == lancId);
+  if (!l) return;
+  if (compData) {
+    l.comprovante = compData;
+    l.comprovanteNome = compNome;
+    l.comprovanteTipo = compTipo;
+    if (sb && !SUPA_URL.includes('COLE')) {
+      await sb.from('lancamentos').update({
+        comprovante_url: compData,
+        comprovante_nome: compNome,
+        comprovante_tipo: compTipo
+      }).eq('id', lancId);
+    } else { save(null, null); }
+  }
+  closeModal('modal-comprov');
+  renderLanc();
+  toast('✓ Comprovante salvo!');
+}
+
+function enviarWhatsApp() {
+  const lancId = document.getElementById('comp-lanc-id').value;
+  const l = DB.lancs.find(x => x.id == lancId);
+  const c = DB.clientes.find(x => x.id == l?.cId);
+  const msg = document.getElementById('comp-msg').value.trim();
+
+  // Save comprovante first if attached
+  if (compData && l) {
+    l.comprovante = compData;
+    l.comprovanteNome = compNome;
+    l.comprovanteTipo = compTipo;
+    if (sb && !SUPA_URL.includes('COLE')) {
+      sb.from('lancamentos').update({
+        comprovante_url: compData,
+        comprovante_nome: compNome,
+        comprovante_tipo: compTipo
+      }).eq('id', lancId);
+    } else { save(null, null); }
+  }
+
+  // Build WhatsApp link
+  let tel = c ? (c.tel || '').replace(/\D/g, '') : '';
+  // Add Brazil country code if missing
+  if (tel && !tel.startsWith('55')) tel = '55' + tel;
+  const waUrl = tel
+    ? `https://wa.me/${tel}?text=${encodeURIComponent(msg)}`
+    : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+
+  window.open(waUrl, '_blank');
+  closeModal('modal-comprov');
+  renderLanc();
+  toast('✓ WhatsApp aberto!');
+}
 
 // spin animation for loading icon
 const spinStyle = document.createElement('style');
