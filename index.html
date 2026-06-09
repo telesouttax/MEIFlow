@@ -312,28 +312,38 @@ tr:hover td{background:rgba(124,58,237,.04);}
 <!-- MODAL CLIENTE -->
 <div class="modal-overlay" id="modal-cli" style="display:none" onclick="if(event.target===this)closeModal('modal-cli')">
   <div class="modal">
-    <div class="modal-title">Novo cliente</div>
+    <input type="hidden" id="c-id" value="">
+    <div class="modal-title" id="c-modal-title">Novo cliente</div>
     <button class="modal-close" onclick="closeModal('modal-cli')">✕</button>
-    <div class="form-row">
-      <div class="form-group"><label>Nome / Razão social *</label><input type="text" id="c-nome" placeholder="Igreja Bom Pastor"></div>
-      <div class="form-group"><label>Responsável</label><input type="text" id="c-resp" placeholder="Pastor João"></div>
+    <div id="c-campos-publicos">
+      <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem;display:flex;align-items:center;gap:8px"><span>Dados do cliente</span><div style="flex:1;height:1px;background:var(--border)"></div></div>
+      <div class="form-row">
+        <div class="form-group"><label>Nome / Razão social *</label><input type="text" id="c-nome" placeholder="Igreja Bom Pastor"></div>
+        <div class="form-group"><label>Responsável</label><input type="text" id="c-resp" placeholder="Pastor João"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>E-mail</label><input type="email" id="c-email" placeholder="contato@empresa.com"></div>
+        <div class="form-group"><label>Telefone</label><input type="text" id="c-tel" placeholder="(11) 99999-9999"></div>
+      </div>
+      <div class="form-group"><label>CNPJ / CPF</label><input type="text" id="c-cnpj" placeholder="00.000.000/0001-00"></div>
     </div>
-    <div class="form-row">
-      <div class="form-group"><label>E-mail</label><input type="email" id="c-email" placeholder="contato@empresa.com"></div>
-      <div class="form-group"><label>Telefone</label><input type="text" id="c-tel" placeholder="(11) 99999-9999"></div>
-    </div>
+    <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin:.75rem 0;display:flex;align-items:center;gap:8px"><span>Contrato</span><div style="flex:1;height:1px;background:var(--border)"></div></div>
+    <div class="form-group"><label>Serviço prestado</label><input type="text" id="c-servico" placeholder="Design gráfico, identidade visual..."></div>
     <div class="form-row">
       <div class="form-group"><label>Valor mensal (R$) *</label><input type="number" id="c-valor" placeholder="800"></div>
       <div class="form-group"><label>Dia de pagamento *</label><input type="number" id="c-dia" placeholder="10" min="1" max="31"></div>
     </div>
-    <div class="form-row">
-      <div class="form-group"><label>CNPJ / CPF</label><input type="text" id="c-cnpj" placeholder="00.000.000/0001-00"></div>
-      <div class="form-group"><label>Status</label><select id="c-status"><option value="ativo">Ativo</option><option value="inativo">Inativo</option><option value="pausa">Em pausa</option></select></div>
+    <div class="form-group"><label>Status</label>
+      <select id="c-status">
+        <option value="ativo">Ativo</option>
+        <option value="inativo">Inativo</option>
+        <option value="pausa">Em pausa</option>
+        <option value="pendente">Pendente — aguardando ativação</option>
+      </select>
     </div>
-    <div class="form-group"><label>Serviço prestado</label><input type="text" id="c-servico" placeholder="Design gráfico, identidade visual..."></div>
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-cli')">Cancelar</button>
-      <button class="btn btn-primary" style="width:auto" onclick="salvarCli()">Salvar cliente</button>
+      <button class="btn btn-primary" style="width:auto" id="c-save-btn" onclick="salvarCli()">Salvar cliente</button>
     </div>
   </div>
 </div>
@@ -476,8 +486,8 @@ function toast(msg,t='ok'){
 // =========================================
 // SUAS CREDENCIAIS — edite aqui
 // =========================================
-const MEU_EMAIL = 'teles.designr@gmail.com';   // 👈 troque pelo seu e-mail
-const MINHA_SENHA = 'admin';   // 👈 troque pela sua senha
+const MEU_EMAIL = 'seu@email.com';   // 👈 troque pelo seu e-mail
+const MINHA_SENHA = 'suasenha123';   // 👈 troque pela sua senha
 // =========================================
 
 // AUTH
@@ -613,31 +623,70 @@ function renderCli(){
   const f=DB.clientes.filter(c=>c.nome.toLowerCase().includes(cFilt)||c.resp.toLowerCase().includes(cFilt));
   document.getElementById('cli-table').innerHTML=f.length?f.map(c=>`
     <tr>
-      <td><div style="font-weight:500">${c.nome}</div><div style="font-size:12px;color:var(--text-muted)">${c.cnpj||c.servico||'—'}</div></td>
+      <td><div style="font-weight:500">${c.nome}</div><div style="font-size:12px;color:var(--text-muted)">${c.cnpj||'—'}</div></td>
       <td><div>${c.resp||'—'}</div><div style="font-size:12px;color:var(--text-muted)">${c.email||'—'}</div></td>
       <td class="td-mono" style="color:var(--purple-ultra)">${fmt(c.valor||0)}</td>
       <td><span style="font-family:var(--mono);font-size:13px">${c.dia?'Dia '+c.dia:'—'}</span></td>
       <td>${badge(c.status)}</td>
-      <td><button class="btn-icon" onclick="delCli(${c.id})">✕</button></td>
+      <td style="display:flex;gap:6px;align-items:center">
+        <button class="btn btn-ghost btn-sm" onclick="editarCli(${c.id})" style="font-size:12px">✏ Editar</button>
+        <button class="btn-icon" onclick="delCli(${c.id})">✕</button>
+      </td>
     </tr>`).join(''):'<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">⬡</div><div class="empty-title">Nenhum cliente</div><div class="empty-desc">Adicione seu primeiro cliente</div></div></td></tr>';
 }
 async function salvarCli(){
+  const editId = document.getElementById('c-id').value;
+  const isEdit = !!editId;
   const nome=document.getElementById('c-nome').value.trim();
-  const valor=parseFloat(document.getElementById('c-valor').value);
-  const dia=parseInt(document.getElementById('c-dia').value);
-  if(!nome||!valor||!dia){toast('⚠ Preencha os campos obrigatórios','warn');return;}
-  const row={nome,responsavel:document.getElementById('c-resp').value,email:document.getElementById('c-email').value,telefone:document.getElementById('c-tel').value,cnpj:document.getElementById('c-cnpj').value,valor_mensal:valor,dia_pagamento:dia,servico:document.getElementById('c-servico').value,status:'ativo'};
-  if(sb&&!SUPA_URL.includes('COLE')){
-    const{data,error}=await sb.from('clientes').insert(row).select().single();
-    if(error){toast('⚠ Erro ao salvar: '+error.message,'err');return;}
-    DB.clientes.push({id:data.id,nome:data.nome,resp:data.responsavel,email:data.email,tel:data.telefone,cnpj:data.cnpj,valor:data.valor_mensal,dia:data.dia_pagamento,servico:data.servico,status:data.status});
-  } else {
-    const id=DB.clientes.length?Math.max(...DB.clientes.map(c=>c.id))+1:1;
-    DB.clientes.push({id,...row,resp:row.responsavel,tel:row.telefone,valor:row.valor_mensal,dia:row.dia_pagamento});
+  const valor=parseFloat(document.getElementById('c-valor').value)||0;
+  const dia=parseInt(document.getElementById('c-dia').value)||1;
+  if(!nome){toast('⚠ Nome obrigatório','warn');return;}
+  const row={nome,responsavel:document.getElementById('c-resp').value,email:document.getElementById('c-email').value,telefone:document.getElementById('c-tel').value,cnpj:document.getElementById('c-cnpj').value,valor_mensal:valor,dia_pagamento:dia,servico:document.getElementById('c-servico').value,status:document.getElementById('c-status').value};
+  if(isEdit){
+    // UPDATE
+    if(sb&&!SUPA_URL.includes('COLE')){
+      const{error}=await sb.from('clientes').update(row).eq('id',editId);
+      if(error){toast('⚠ Erro ao atualizar: '+error.message,'err');return;}
+    }
+    const idx=DB.clientes.findIndex(c=>c.id==editId);
+    if(idx>-1) DB.clientes[idx]={...DB.clientes[idx],nome,resp:row.responsavel,email:row.email,tel:row.telefone,cnpj:row.cnpj,valor,dia,servico:row.servico,status:row.status};
     save(null,null);
+    closeModal('modal-cli');renderCli();renderDash();updateBadge();updatePendingBadge();toast('✓ Cliente atualizado!');
+  } else {
+    // INSERT
+    if(sb&&!SUPA_URL.includes('COLE')){
+      const{data,error}=await sb.from('clientes').insert(row).select().single();
+      if(error){toast('⚠ Erro ao salvar: '+error.message,'err');return;}
+      DB.clientes.push({id:data.id,nome:data.nome,resp:data.responsavel,email:data.email,tel:data.telefone,cnpj:data.cnpj,valor:data.valor_mensal,dia:data.dia_pagamento,servico:data.servico,status:data.status});
+    } else {
+      const id=DB.clientes.length?Math.max(...DB.clientes.map(c=>c.id))+1:1;
+      DB.clientes.push({id,...row,resp:row.responsavel,tel:row.telefone,valor:row.valor_mensal,dia:row.dia_pagamento});
+      save(null,null);
+    }
+    closeModal('modal-cli');renderCli();renderDash();toast('✓ Cliente salvo!');
   }
-  closeModal('modal-cli');renderCli();renderDash();toast('✓ Cliente salvo!');
-  ['c-nome','c-resp','c-email','c-tel','c-cnpj','c-valor','c-dia','c-servico'].forEach(id=>document.getElementById(id).value='');
+  ['c-id','c-nome','c-resp','c-email','c-tel','c-cnpj','c-valor','c-dia','c-servico'].forEach(id=>document.getElementById(id).value='');
+}
+
+function editarCli(id){
+  const c=DB.clientes.find(x=>x.id==id);
+  if(!c)return;
+  // Fill all fields
+  document.getElementById('c-id').value=c.id;
+  document.getElementById('c-nome').value=c.nome||'';
+  document.getElementById('c-resp').value=c.resp||'';
+  document.getElementById('c-email').value=c.email||'';
+  document.getElementById('c-tel').value=c.tel||'';
+  document.getElementById('c-cnpj').value=c.cnpj||'';
+  document.getElementById('c-valor').value=c.valor||'';
+  document.getElementById('c-dia').value=c.dia||'';
+  document.getElementById('c-servico').value=c.servico||'';
+  document.getElementById('c-status').value=c.status||'ativo';
+  // Update modal title and button
+  document.getElementById('c-modal-title').textContent='Editar cliente';
+  document.getElementById('c-save-btn').textContent='Salvar alterações';
+  // Show modal (skip fillCliSel logic)
+  document.getElementById('modal-cli').style.display='flex';
 }
 async function delCli(id){
   if(!confirm('Remover este cliente?'))return;
@@ -838,6 +887,16 @@ const _origOpen = openModal;
 // patch openModal to reset upload state on modal-nf
 const _patchedOpen = openModal;
 function openModal(id) {
+  if (id === 'modal-cli') {
+    // Reset to "new" mode
+    document.getElementById('c-id').value='';
+    document.getElementById('c-modal-title').textContent='Novo cliente';
+    document.getElementById('c-save-btn').textContent='Salvar cliente';
+    ['c-nome','c-resp','c-email','c-tel','c-cnpj','c-valor','c-dia','c-servico'].forEach(f=>document.getElementById(f).value='');
+    document.getElementById('c-status').value='ativo';
+    document.getElementById('modal-cli').style.display='flex';
+    return;
+  }
   if (id === 'modal-nf') {
     clearNFFile();
   }
