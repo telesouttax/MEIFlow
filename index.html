@@ -166,14 +166,13 @@ tr:hover td{background:rgba(124,58,237,.04);}
     <p class="login-sub">Acesse seu painel financeiro pessoal</p>
     <div class="form-group">
       <label>E-mail</label>
-      <input type="email" id="login-email" placeholder="seu@email.com" value="designer@meiflow.com">
+      <input type="email" id="login-email" placeholder="seu@email.com" >
     </div>
     <div class="form-group">
       <label>Senha</label>
-      <input type="password" id="login-pass" placeholder="••••••••" value="12345678">
+      <input type="password" id="login-pass" placeholder="••••••••" >
     </div>
     <button class="btn btn-primary" onclick="doLogin()" style="margin-top:.25rem">⚡ Entrar no painel</button>
-    <p style="font-size:12px;color:var(--text-dim);text-align:center;margin-top:1rem">Demo: qualquer e-mail e senha funcionam</p>
   </div>
 </div>
 
@@ -425,12 +424,25 @@ function toast(msg,t='ok'){
   setTimeout(()=>el.remove(),3000);
 }
 
+// =========================================
+// SUAS CREDENCIAIS — edite aqui
+// =========================================
+const MEU_EMAIL = 'teles.designr@gmail.com';   // 👈 troque pelo seu e-mail
+const MINHA_SENHA = '154263Lucas@';   // 👈 troque pela sua senha
+// =========================================
+
 // AUTH
 function doLogin(){
-  const e=document.getElementById('login-email').value;
+  const e=document.getElementById('login-email').value.trim().toLowerCase();
   const p=document.getElementById('login-pass').value;
-  if(!e||!p){toast('Preencha e-mail e senha','err');return;}
-  DB.user={name:e.split('@')[0],email:e};
+  if(!e||!p){toast('⚠ Preencha e-mail e senha','warn');return;}
+  if(e!==MEU_EMAIL.toLowerCase()||p!==MINHA_SENHA){
+    toast('⚠ E-mail ou senha incorretos','err');
+    document.getElementById('login-pass').value='';
+    document.getElementById('login-pass').focus();
+    return;
+  }
+  DB.user={name:MEU_EMAIL.split('@')[0],email:MEU_EMAIL};
   document.getElementById('login-page').style.display='none';
   document.getElementById('app').style.display='block';
   init();
