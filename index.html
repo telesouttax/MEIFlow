@@ -706,7 +706,7 @@ const PRESTADOR = {
   cnpj: '66.888.248/0001-49',
   pix: '(21) 96019-4636',
   pixTipo: 'Telefone',
-  email: 'lucas.teles@outtax.com.br',
+  email: 'teles.designr@gmail.com',
 };
 // =========================================
 
@@ -725,6 +725,7 @@ function gerarRecibo(lancId) {
   // Store for email sending
   reciboEmailData = {
     email: c ? (c.email||'') : '',
+    clienteId: l.cId,
     nome: c ? (c.resp||c.nome) : cNome(l.cId),
     valor: l.valor,
     desc: l.desc || 'Serviços prestados',
@@ -1230,6 +1231,7 @@ async function updPedidoStatus(id, status) {
     if(email) {
       const eData = {
         email,
+        clienteId: p.cId,
         nome: c ? (c.resp||c.nome) : cNome(p.cId),
         valor: p.valor,
         desc: p.desc || 'Serviço avulso',
@@ -1286,9 +1288,10 @@ const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.send';
 let gmailToken = null;
 
 function buildEmailBody(data) {
+  const extratoLink = data.clienteId ? getLinkExtrato(data.clienteId) : null;
   return `Olá, ${data.nome}!
 
-Passando para confirmar que recebemos o seu pagamento com sucesso. Segue o recibo abaixo:
+Passando para confirmar que recebemos o seu pagamento com sucesso. Segue o recibo em anexo (PDF).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   RECIBO DE PAGAMENTO #${data.num}
@@ -1304,7 +1307,11 @@ Data:        ${data.data ? data.data.split('-').reverse().join('/') : new Date()
 
 Pix: ${PRESTADOR.pix} (${PRESTADOR.pixTipo})
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
+${extratoLink ? `
+📊 Acompanhe seu histórico completo de notas e pagamentos:
+${extratoLink}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+` : ''}
 Obrigado pela confiança! Qualquer dúvida estou à disposição.
 
 Atenciosamente,
@@ -1535,6 +1542,7 @@ async function enviarEmailLanc(lancId) {
   }
   const data = {
     email,
+    clienteId: l.cId,
     nome: c ? (c.resp||c.nome) : cNome(l.cId),
     valor: l.valor,
     desc: l.desc || 'Serviços prestados',
@@ -1565,6 +1573,7 @@ async function enviarEmailPedido(pedId) {
   }
   const data = {
     email,
+    clienteId: p.cId,
     nome: c ? (c.resp||c.nome) : cNome(p.cId),
     valor: p.valor,
     desc: p.desc || 'Serviço avulso',
@@ -1969,6 +1978,7 @@ async function updNFStatus(id,s){
     }
     const eData = {
       email,
+      clienteId: n.cId,
       nome: c ? (c.resp||c.nome) : cNome(n.cId),
       valor: n.valor,
       desc: n.desc || 'Serviços prestados',
@@ -2460,6 +2470,7 @@ function gerarRecibo(lancId) {
   // Store for email sending
   reciboEmailData = {
     email: c ? (c.email||'') : '',
+    clienteId: l.cId,
     nome: c ? (c.resp||c.nome) : cNome(l.cId),
     valor: l.valor,
     desc: l.desc || 'Serviços prestados',
@@ -2918,6 +2929,7 @@ async function updPedidoStatus(id, status) {
     if(email) {
       const eData = {
         email,
+        clienteId: p.cId,
         nome: c ? (c.resp||c.nome) : cNome(p.cId),
         valor: p.valor,
         desc: p.desc || 'Serviço avulso',
