@@ -500,7 +500,7 @@ tr:hover td{background:rgba(124,58,237,.04);}
     <!-- NOTAS -->
     <section class="section" id="sec-notas">
       <div class="page-header">
-        <div><h1 class="page-title">Notas Fiscais</h1><p class="page-sub">Controle de NFs emitidas pelo seu MEI</p></div>
+        <div><h1 class="page-title">Notas Fiscais</h1><p class="page-sub">Controle de NFs emitidas pelo seu MEI — apenas para clientes que precisam</p></div>
         <button class="btn btn-primary btn-sm" onclick="openModal('modal-nf')">+ Nova nota</button>
       </div>
       <div class="toolbar">
@@ -554,6 +554,13 @@ tr:hover td{background:rgba(124,58,237,.04);}
     </div>
     <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin:.75rem 0;display:flex;align-items:center;gap:8px"><span>Contrato</span><div style="flex:1;height:1px;background:var(--border)"></div></div>
     <div class="form-group"><label>Serviço prestado</label><input type="text" id="c-servico" placeholder="Design gráfico, identidade visual..."></div>
+    <div class="form-group">
+      <label>Emite nota fiscal para este cliente?</label>
+      <select id="c-emite-nf">
+        <option value="sim">Sim — emite NF</option>
+        <option value="nao">Não — sem nota fiscal</option>
+      </select>
+    </div>
     <div class="form-row">
       <div class="form-group"><label>Valor mensal (R$) *</label><input type="number" id="c-valor" placeholder="800"></div>
       <div class="form-group"><label>Dia de pagamento *</label><input type="number" id="c-dia" placeholder="10" min="1" max="31"></div>
@@ -712,9 +719,14 @@ tr:hover td{background:rgba(124,58,237,.04);}
       <div class="form-group"><label>Valor (R$) *</label><input type="number" id="l-valor" placeholder="800"></div>
     </div>
     <div class="form-group"><label>Descrição</label><input type="text" id="l-desc" placeholder="Pagamento referente ao mês de julho"></div>
-    <div class="form-row">
-      <div class="form-group"><label>Data de recebimento *</label><input type="date" id="l-data"></div>
-      <div class="form-group"><label>NF vinculada</label><input type="text" id="l-nf" placeholder="NF 0042 (opcional)"></div>
+    <div class="form-group"><label>Data de recebimento *</label><input type="date" id="l-data"></div>
+    <!-- NF OPCIONAL -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:.75rem;cursor:pointer" onclick="toggleLancNF()">
+      <div id="nf-toggle-icon" style="width:18px;height:18px;border-radius:4px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;transition:all .15s">○</div>
+      <span style="font-size:13px;color:var(--text-muted)">Vincular nota fiscal (opcional)</span>
+    </div>
+    <div id="nf-optional-field" style="display:none">
+      <div class="form-group"><label>Número da NF</label><input type="text" id="l-nf" placeholder="NF 0042"></div>
     </div>
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-lanc')">Cancelar</button>
@@ -750,7 +762,7 @@ async function dbLoad() {
       sb.from('notas').select('*').order('created_at'),
       sb.from('lancamentos').select('*').order('data'),
     ]);
-    DB.clientes = (c.data||[]).map(x=>({id:x.id,nome:x.nome,resp:x.responsavel,email:x.email,tel:x.telefone,cnpj:x.cnpj,valor:x.valor_mensal,dia:x.dia_pagamento,servico:x.servico,status:x.status||'pendente'}));
+    DB.clientes = (c.data||[]).map(x=>({id:x.id,nome:x.nome,resp:x.responsavel,email:x.email,tel:x.telefone,cnpj:x.cnpj,valor:x.valor_mensal,dia:x.dia_pagamento,servico:x.servico,status:x.status||'pendente',emiteNF:x.emite_nf!==false}));
     DB.notas    = (n.data||[]).map(x=>({id:x.id,num:x.numero,cId:x.cliente_id,desc:x.descricao,valor:x.valor,emissao:x.data_emissao,venc:x.data_vencimento,status:x.status,anexo:x.anexo_url,anexoNome:x.anexo_nome,anexoTipo:x.anexo_tipo}));
     DB.lancs    = (l.data||[]).map(x=>({id:x.id,cId:x.cliente_id,desc:x.descricao,valor:x.valor,data:x.data,nf:x.nf_numero,comprovante:x.comprovante_url,comprovanteNome:x.comprovante_nome,comprovanteTipo:x.comprovante_tipo}));
   } catch(e) { console.error('Supabase load error', e); }
@@ -785,8 +797,8 @@ function toast(msg,t='ok'){
 // =========================================
 // SUAS CREDENCIAIS — edite aqui
 // =========================================
-const MEU_EMAIL = 'teles.designr@gmail.com';   // 👈 troque pelo seu e-mail
-const MINHA_SENHA = 'admin';   // 👈 troque pela sua senha
+const MEU_EMAIL = 'seu@email.com';   // 👈 troque pelo seu e-mail
+const MINHA_SENHA = 'suasenha123';   // 👈 troque pela sua senha
 // =========================================
 
 // AUTH
@@ -844,7 +856,11 @@ function goTo(id,el){
 function closeModal(id){document.getElementById(id).style.display='none';}
 function fillCliSel(mid){
   const px=mid==='modal-nf'?'n':'l';
-  document.getElementById(px+'-cli').innerHTML=DB.clientes.filter(c=>c.status==='ativo').map(c=>`<option value="${c.id}">${c.nome}</option>`).join('');
+  // For NF modal, only show clients that need NF
+  const clientes = mid==='modal-nf'
+    ? DB.clientes.filter(c=>c.status==='ativo'&&c.emiteNF!==false)
+    : DB.clientes.filter(c=>c.status==='ativo');
+  document.getElementById(px+'-cli').innerHTML=clientes.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('');
 }
 
 // ALERTAS
@@ -926,7 +942,7 @@ function renderCli(){
       <td><div>${c.resp||'—'}</div><div style="font-size:12px;color:var(--text-muted)">${c.email||'—'}</div></td>
       <td class="td-mono" style="color:var(--purple-ultra)">${fmt(c.valor||0)}</td>
       <td><span style="font-family:var(--mono);font-size:13px">${c.dia?'Dia '+c.dia:'—'}</span></td>
-      <td>${badge(c.status)}</td>
+      <td style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${badge(c.status)}<span style="font-size:10px;padding:2px 7px;border-radius:20px;font-weight:600;${c.emiteNF===false||c.emiteNF==='nao'?'background:rgba(139,138,170,.1);color:var(--text-dim);border:1px solid var(--border)':'background:rgba(124,58,237,.1);color:var(--purple-ultra);border:1px solid var(--border)'};">${c.emiteNF===false||c.emiteNF==='nao'?'Sem NF':'NF'}</span></td>
       <td style="display:flex;gap:6px;align-items:center">
         <button class="btn btn-ghost btn-sm" onclick="verExtrato(${c.id})" style="font-size:12px">📊 Extrato</button>
         <button class="btn btn-ghost btn-sm" onclick="editarCli(${c.id})" style="font-size:12px">✏ Editar</button>
@@ -941,7 +957,8 @@ async function salvarCli(){
   const valor=parseFloat(document.getElementById('c-valor').value)||0;
   const dia=parseInt(document.getElementById('c-dia').value)||1;
   if(!nome){toast('⚠ Nome obrigatório','warn');return;}
-  const row={nome,responsavel:document.getElementById('c-resp').value,email:document.getElementById('c-email').value,telefone:document.getElementById('c-tel').value,cnpj:document.getElementById('c-cnpj').value,valor_mensal:valor,dia_pagamento:dia,servico:document.getElementById('c-servico').value,status:document.getElementById('c-status').value};
+  const emiteNF=document.getElementById('c-emite-nf').value;
+  const row={nome,responsavel:document.getElementById('c-resp').value,email:document.getElementById('c-email').value,telefone:document.getElementById('c-tel').value,cnpj:document.getElementById('c-cnpj').value,valor_mensal:valor,dia_pagamento:dia,servico:document.getElementById('c-servico').value,status:document.getElementById('c-status').value,emite_nf:emiteNF==='sim'};
   if(isEdit){
     // UPDATE
     if(sb&&!SUPA_URL.includes('COLE')){
@@ -982,6 +999,7 @@ function editarCli(id){
   document.getElementById('c-dia').value=c.dia||'';
   document.getElementById('c-servico').value=c.servico||'';
   document.getElementById('c-status').value=c.status||'ativo';
+  document.getElementById('c-emite-nf').value=(c.emiteNF===false||c.emiteNF==='nao')?'nao':'sim';
   // Update modal title and button
   document.getElementById('c-modal-title').textContent='Editar cliente';
   document.getElementById('c-save-btn').textContent='Salvar alterações';
@@ -1200,6 +1218,7 @@ function openModal(id) {
     document.getElementById('c-save-btn').textContent='Salvar cliente';
     ['c-nome','c-resp','c-email','c-tel','c-cnpj','c-valor','c-dia','c-servico'].forEach(f=>document.getElementById(f).value='');
     document.getElementById('c-status').value='ativo';
+    document.getElementById('c-emite-nf').value='sim';
     document.getElementById('modal-cli').style.display='flex';
     return;
   }
@@ -1214,7 +1233,16 @@ function openModal(id) {
     const mx = DB.notas.length ? Math.max(...DB.notas.map(n=>parseInt(n.num)||0)) : 40;
     document.getElementById('n-num').value = String(mx+1).padStart(4,'0');
   }
-  if (id === 'modal-lanc') document.getElementById('l-data').value = new Date().toISOString().split('T')[0];
+  if (id === 'modal-lanc') {
+    document.getElementById('l-data').value = new Date().toISOString().split('T')[0];
+    // Reset NF toggle
+    const nfField = document.getElementById('nf-optional-field');
+    const nfIcon = document.getElementById('nf-toggle-icon');
+    if(nfField) { nfField.style.display='none'; }
+    if(nfIcon) { nfIcon.textContent='○'; nfIcon.style.background='transparent'; nfIcon.style.color='var(--text-muted)'; nfIcon.style.borderColor='var(--border)'; }
+    const nfInput = document.getElementById('l-nf');
+    if(nfInput) nfInput.value='';
+  }
   document.getElementById(id).style.display = 'flex';
 }
 
@@ -1367,6 +1395,22 @@ function enviarWhatsApp() {
   renderLanc();
   toast('✓ WhatsApp aberto!');
 }
+
+// Toggle NF field in lançamento modal
+function toggleLancNF() {
+  const field = document.getElementById('nf-optional-field');
+  const icon = document.getElementById('nf-toggle-icon');
+  const visible = field.style.display !== 'none';
+  field.style.display = visible ? 'none' : 'block';
+  icon.textContent = visible ? '○' : '✓';
+  icon.style.background = visible ? 'transparent' : 'var(--purple)';
+  icon.style.color = visible ? 'var(--text-muted)' : 'white';
+  icon.style.borderColor = visible ? 'var(--border)' : 'var(--purple)';
+  if (visible) document.getElementById('l-nf').value = '';
+}
+
+// Reset toggle on modal open
+const _origLancOpen = openModal;
 
 // spin animation for loading icon
 const spinStyle = document.createElement('style');
