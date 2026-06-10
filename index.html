@@ -232,6 +232,130 @@ function compartilharExtrato() {
   window.open(waUrl, '_blank');
 }
 
+
+// =========================================
+// EMISSÃO NF — GOV.BR
+// =========================================
+let emissaoClienteId = null;
+
+function abrirEmissaoNF(cId) {
+  // Fill client selector
+  const sel = document.getElementById('em-cliente');
+  sel.innerHTML = '<option value="">Selecione o cliente...</option>' +
+    DB.clientes.filter(c => c.status === 'ativo' && c.emiteNF !== false)
+      .map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+
+  // Set competencia to current month
+  const now = new Date();
+  document.getElementById('em-competencia').value =
+    `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+
+  // Clear fields
+  document.getElementById('em-valor').value = '';
+  document.getElementById('em-desc').value = '';
+  document.getElementById('em-num-nf').value = '';
+  document.getElementById('em-tomador-wrap').style.display = 'none';
+
+  // Pre-select client if provided
+  if (cId) {
+    sel.value = cId;
+    preencherDadosEmissao(cId);
+  }
+
+  document.getElementById('modal-emissao-nf').style.display = 'flex';
+}
+
+function preencherDadosEmissao(cId) {
+  emissaoClienteId = cId;
+  const c = DB.clientes.find(x => x.id == cId);
+  if (!c) { document.getElementById('em-tomador-wrap').style.display = 'none'; return; }
+
+  // Auto-fill valor and desc
+  if (c.valor) document.getElementById('em-valor').value = c.valor;
+  if (c.servico) document.getElementById('em-desc').value = c.servico;
+
+  // Show tomador info
+  document.getElementById('em-tomador-wrap').style.display = 'block';
+  document.getElementById('em-tomador-info').innerHTML = `
+    <div style="display:flex;gap:1rem;flex-wrap:wrap">
+      <div><div style="font-size:11px;color:var(--text-muted)">Nome</div><div style="font-weight:500">${c.nome}</div></div>
+      ${c.cnpj ? `<div><div style="font-size:11px;color:var(--text-muted)">CNPJ/CPF</div><div style="font-weight:500">${c.cnpj}</div></div>` : ''}
+      ${c.email ? `<div><div style="font-size:11px;color:var(--text-muted)">E-mail</div><div style="font-weight:500">${c.email}</div></div>` : ''}
+    </div>`;
+}
+
+function abrirGovBr() {
+  const cId = document.getElementById('em-cliente').value;
+  const valor = document.getElementById('em-valor').value;
+  const desc = document.getElementById('em-desc').value;
+
+  if (!cId || !valor || !desc) {
+    toast('⚠ Preencha cliente, valor e descrição', 'warn');
+    return;
+  }
+
+  const c = DB.clientes.find(x => x.id == cId);
+  const competencia = document.getElementById('em-competencia').value;
+  const aliquota = document.getElementById('em-aliquota').value || '2';
+
+  // Build gov.br URL - opens the emissor nacional
+  // We can pass query params that the portal supports
+  const baseUrl = 'https://www.nfse.gov.br/EmissorNacional/NotaFiscal/Emitir';
+
+  // Build a prefill URL with available params
+  const params = new URLSearchParams();
+  if (c && c.cnpj) params.set('cnpjTomador', c.cnpj.replace(/\D/g,''));
+  if (c && c.nome) params.set('razaoSocialTomador', c.nome);
+  if (c && c.email) params.set('emailTomador', c.email);
+  params.set('discriminacao', desc);
+  params.set('valorServicos', valor);
+  if (competencia) params.set('competencia', competencia.replace('-','/'));
+
+  const url = `${baseUrl}?${params.toString()}`;
+  window.open(url, '_blank');
+  toast('🏛 gov.br aberto! Confirme a emissão lá e volte para registrar.');
+}
+
+async function registrarNFAposEmissao() {
+  const cId = parseInt(document.getElementById('em-cliente').value);
+  const num = document.getElementById('em-num-nf').value.trim();
+  const valor = parseFloat(document.getElementById('em-valor').value);
+  const desc = document.getElementById('em-desc').value;
+  const status = document.getElementById('em-status-nf').value;
+  const competencia = document.getElementById('em-competencia').value;
+
+  if (!num || !cId || !valor) {
+    toast('⚠ Preencha o número da NF emitida', 'warn');
+    return;
+  }
+
+  // Build emissao date from competencia
+  const emissao = competencia ? competencia + '-01' : new Date().toISOString().split('T')[0];
+  const vencDate = new Date(emissao);
+  vencDate.setDate(vencDate.getDate() + 30);
+  const venc = vencDate.toISOString().split('T')[0];
+
+  const row = {
+    numero: num, cliente_id: cId, descricao: desc, valor,
+    data_emissao: emissao, data_vencimento: venc,
+    status, anexo_url: null, anexo_nome: null, anexo_tipo: null
+  };
+
+  if (sb && !SUPA_URL.includes('COLE')) {
+    const { data, error } = await sb.from('notas').insert(row).select().single();
+    if (error) { toast('⚠ Erro: ' + error.message, 'err'); return; }
+    DB.notas.push({id:data.id,num:data.numero,cId:data.cliente_id,desc:data.descricao,valor:data.valor,emissao:data.data_emissao,venc:data.data_vencimento,status:data.status,anexo:null,anexoNome:null,anexoTipo:null});
+  } else {
+    const id = DB.notas.length ? Math.max(...DB.notas.map(n=>n.id))+1 : 1;
+    DB.notas.push({id,num,cId,desc,valor,emissao,venc,status,anexo:null,anexoNome:null,anexoTipo:null});
+    save(null,null);
+  }
+
+  closeModal('modal-emissao-nf');
+  renderNF(); renderDash(); renderAlertas(); updateBadge();
+  toast('✓ Nota NF ' + num + ' registrada no MEI Flow!');
+}
+
 </script>
 <style>
 :root {
@@ -501,7 +625,10 @@ tr:hover td{background:rgba(124,58,237,.04);}
     <section class="section" id="sec-notas">
       <div class="page-header">
         <div><h1 class="page-title">Notas Fiscais</h1><p class="page-sub">Controle de NFs emitidas pelo seu MEI — apenas para clientes que precisam</p></div>
-        <button class="btn btn-primary btn-sm" onclick="openModal('modal-nf')">+ Nova nota</button>
+        <div style="display:flex;gap:.5rem">
+          <button class="btn btn-ghost btn-sm" onclick="abrirEmissaoNF(null)" style="color:var(--purple-ultra)">📝 Emitir no gov.br</button>
+          <button class="btn btn-primary btn-sm" onclick="openModal('modal-nf')">+ Registrar nota</button>
+        </div>
       </div>
       <div class="toolbar">
         <div class="search-wrap"><span class="search-icon">🔍</span><input type="text" placeholder="Buscar nota..." oninput="filterNF(this.value)"></div>
@@ -599,6 +726,79 @@ tr:hover td{background:rgba(124,58,237,.04);}
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-cli')">Cancelar</button>
       <button class="btn btn-primary" style="width:auto" id="c-save-btn" onclick="salvarCli()">Salvar cliente</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL EMISSÃO NF GOV.BR -->
+<div class="modal-overlay" id="modal-emissao-nf" style="display:none" onclick="if(event.target===this)closeModal('modal-emissao-nf')">
+  <div class="modal" style="max-width:540px">
+    <div class="modal-title">📝 Emitir nota fiscal — NFS-e gov.br</div>
+    <button class="modal-close" onclick="closeModal('modal-emissao-nf')">✕</button>
+
+    <div style="background:rgba(124,58,237,.08);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.875rem 1rem;margin-bottom:1.25rem;font-size:13px;color:var(--text-muted);line-height:1.6">
+      Preencha os dados abaixo e clique em <strong style="color:var(--text)">Abrir gov.br</strong>. O portal abrirá numa nova aba — você só precisa confirmar a emissão lá. Depois volte aqui e registre o número da nota.
+    </div>
+
+    <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem;display:flex;align-items:center;gap:8px"><span>Dados da nota</span><div style="flex:1;height:1px;background:var(--border)"></div></div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>Cliente (tomador) *</label>
+        <select id="em-cliente" onchange="preencherDadosEmissao(this.value)"></select>
+      </div>
+      <div class="form-group">
+        <label>Valor do serviço (R$) *</label>
+        <input type="number" id="em-valor" placeholder="800">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Descrição do serviço *</label>
+      <input type="text" id="em-desc" placeholder="Serviços de design gráfico — julho/2025">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Competência (mês/ano)</label>
+        <input type="month" id="em-competencia">
+      </div>
+      <div class="form-group">
+        <label>Alíquota ISS (%)</label>
+        <input type="number" id="em-aliquota" placeholder="2" min="0" max="5" step="0.1" value="2">
+      </div>
+    </div>
+
+    <!-- DADOS DO TOMADOR (auto-preenchidos) -->
+    <div id="em-tomador-wrap" style="display:none">
+      <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem;display:flex;align-items:center;gap:8px"><span>Tomador detectado</span><div style="flex:1;height:1px;background:var(--border)"></div></div>
+      <div style="background:var(--dark3);border-radius:var(--radius-sm);padding:.875rem 1rem;font-size:13px;margin-bottom:1rem" id="em-tomador-info"></div>
+    </div>
+
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-emissao-nf')">Cancelar</button>
+      <button class="btn btn-primary" style="width:auto;background:linear-gradient(135deg,#1351B4,#0E3F8A)" onclick="abrirGovBr()">
+        🏛 Abrir gov.br e emitir
+      </button>
+    </div>
+
+    <!-- APÓS EMITIR -->
+    <div style="border-top:1px solid var(--border);margin-top:1.25rem;padding-top:1.25rem">
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem">Após emitir no gov.br — registre aqui</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Número da NF emitida</label>
+          <input type="text" id="em-num-nf" placeholder="Ex: 0042">
+        </div>
+        <div class="form-group">
+          <label>Status</label>
+          <select id="em-status-nf">
+            <option value="enviada">Enviada</option>
+            <option value="emitida">Emitida</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-success" style="width:100%;justify-content:center" onclick="registrarNFAposEmissao()">
+        ✓ Registrar nota no MEI Flow
+      </button>
     </div>
   </div>
 </div>
@@ -992,6 +1192,7 @@ function renderCli(){
       <td style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${badge(c.status)}<span style="font-size:10px;padding:2px 7px;border-radius:20px;font-weight:600;${c.emiteNF===false||c.emiteNF==='nao'?'background:rgba(139,138,170,.1);color:var(--text-dim);border:1px solid var(--border)':'background:rgba(124,58,237,.1);color:var(--purple-ultra);border:1px solid var(--border)'};">${c.emiteNF===false||c.emiteNF==='nao'?'Sem NF':'NF'}</span></td>
       <td style="display:flex;gap:6px;align-items:center">
         <button class="btn btn-ghost btn-sm" onclick="verExtrato(${c.id})" style="font-size:12px">📊 Extrato</button>
+        ${c.emiteNF!==false?`<button class="btn btn-ghost btn-sm" onclick="abrirEmissaoNF(${c.id})" style="font-size:12px;color:var(--purple-ultra)">📝 Emitir NF</button>`:''}
         <button class="btn btn-ghost btn-sm" onclick="editarCli(${c.id})" style="font-size:12px">✏ Editar</button>
         <button class="btn-icon" onclick="delCli(${c.id})">✕</button>
       </td>
@@ -1734,6 +1935,130 @@ function compartilharExtrato() {
   if (tel && !tel.startsWith('55')) tel = '55' + tel;
   const waUrl = tel ? `https://wa.me/${tel}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
   window.open(waUrl, '_blank');
+}
+
+
+// =========================================
+// EMISSÃO NF — GOV.BR
+// =========================================
+let emissaoClienteId = null;
+
+function abrirEmissaoNF(cId) {
+  // Fill client selector
+  const sel = document.getElementById('em-cliente');
+  sel.innerHTML = '<option value="">Selecione o cliente...</option>' +
+    DB.clientes.filter(c => c.status === 'ativo' && c.emiteNF !== false)
+      .map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+
+  // Set competencia to current month
+  const now = new Date();
+  document.getElementById('em-competencia').value =
+    `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+
+  // Clear fields
+  document.getElementById('em-valor').value = '';
+  document.getElementById('em-desc').value = '';
+  document.getElementById('em-num-nf').value = '';
+  document.getElementById('em-tomador-wrap').style.display = 'none';
+
+  // Pre-select client if provided
+  if (cId) {
+    sel.value = cId;
+    preencherDadosEmissao(cId);
+  }
+
+  document.getElementById('modal-emissao-nf').style.display = 'flex';
+}
+
+function preencherDadosEmissao(cId) {
+  emissaoClienteId = cId;
+  const c = DB.clientes.find(x => x.id == cId);
+  if (!c) { document.getElementById('em-tomador-wrap').style.display = 'none'; return; }
+
+  // Auto-fill valor and desc
+  if (c.valor) document.getElementById('em-valor').value = c.valor;
+  if (c.servico) document.getElementById('em-desc').value = c.servico;
+
+  // Show tomador info
+  document.getElementById('em-tomador-wrap').style.display = 'block';
+  document.getElementById('em-tomador-info').innerHTML = `
+    <div style="display:flex;gap:1rem;flex-wrap:wrap">
+      <div><div style="font-size:11px;color:var(--text-muted)">Nome</div><div style="font-weight:500">${c.nome}</div></div>
+      ${c.cnpj ? `<div><div style="font-size:11px;color:var(--text-muted)">CNPJ/CPF</div><div style="font-weight:500">${c.cnpj}</div></div>` : ''}
+      ${c.email ? `<div><div style="font-size:11px;color:var(--text-muted)">E-mail</div><div style="font-weight:500">${c.email}</div></div>` : ''}
+    </div>`;
+}
+
+function abrirGovBr() {
+  const cId = document.getElementById('em-cliente').value;
+  const valor = document.getElementById('em-valor').value;
+  const desc = document.getElementById('em-desc').value;
+
+  if (!cId || !valor || !desc) {
+    toast('⚠ Preencha cliente, valor e descrição', 'warn');
+    return;
+  }
+
+  const c = DB.clientes.find(x => x.id == cId);
+  const competencia = document.getElementById('em-competencia').value;
+  const aliquota = document.getElementById('em-aliquota').value || '2';
+
+  // Build gov.br URL - opens the emissor nacional
+  // We can pass query params that the portal supports
+  const baseUrl = 'https://www.nfse.gov.br/EmissorNacional/NotaFiscal/Emitir';
+
+  // Build a prefill URL with available params
+  const params = new URLSearchParams();
+  if (c && c.cnpj) params.set('cnpjTomador', c.cnpj.replace(/\D/g,''));
+  if (c && c.nome) params.set('razaoSocialTomador', c.nome);
+  if (c && c.email) params.set('emailTomador', c.email);
+  params.set('discriminacao', desc);
+  params.set('valorServicos', valor);
+  if (competencia) params.set('competencia', competencia.replace('-','/'));
+
+  const url = `${baseUrl}?${params.toString()}`;
+  window.open(url, '_blank');
+  toast('🏛 gov.br aberto! Confirme a emissão lá e volte para registrar.');
+}
+
+async function registrarNFAposEmissao() {
+  const cId = parseInt(document.getElementById('em-cliente').value);
+  const num = document.getElementById('em-num-nf').value.trim();
+  const valor = parseFloat(document.getElementById('em-valor').value);
+  const desc = document.getElementById('em-desc').value;
+  const status = document.getElementById('em-status-nf').value;
+  const competencia = document.getElementById('em-competencia').value;
+
+  if (!num || !cId || !valor) {
+    toast('⚠ Preencha o número da NF emitida', 'warn');
+    return;
+  }
+
+  // Build emissao date from competencia
+  const emissao = competencia ? competencia + '-01' : new Date().toISOString().split('T')[0];
+  const vencDate = new Date(emissao);
+  vencDate.setDate(vencDate.getDate() + 30);
+  const venc = vencDate.toISOString().split('T')[0];
+
+  const row = {
+    numero: num, cliente_id: cId, descricao: desc, valor,
+    data_emissao: emissao, data_vencimento: venc,
+    status, anexo_url: null, anexo_nome: null, anexo_tipo: null
+  };
+
+  if (sb && !SUPA_URL.includes('COLE')) {
+    const { data, error } = await sb.from('notas').insert(row).select().single();
+    if (error) { toast('⚠ Erro: ' + error.message, 'err'); return; }
+    DB.notas.push({id:data.id,num:data.numero,cId:data.cliente_id,desc:data.descricao,valor:data.valor,emissao:data.data_emissao,venc:data.data_vencimento,status:data.status,anexo:null,anexoNome:null,anexoTipo:null});
+  } else {
+    const id = DB.notas.length ? Math.max(...DB.notas.map(n=>n.id))+1 : 1;
+    DB.notas.push({id,num,cId,desc,valor,emissao,venc,status,anexo:null,anexoNome:null,anexoTipo:null});
+    save(null,null);
+  }
+
+  closeModal('modal-emissao-nf');
+  renderNF(); renderDash(); renderAlertas(); updateBadge();
+  toast('✓ Nota NF ' + num + ' registrada no MEI Flow!');
 }
 
 </script>
