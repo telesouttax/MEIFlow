@@ -135,8 +135,10 @@ async function init() {
   _cliente = cliente; _notas = notas||[]; _lancs = lancs||[]; _pedidos = pedidos||[];
   document.title = `Extrato — ${cliente.nome}`;
 
-  const totalPago = _lancs.filter(l=>!l.status_pgto||l.status_pgto==='recebido').reduce((s,l) => s + Number(l.valor), 0);
-  const totalPendente = _notas.filter(n => n.status !== 'paga').reduce((s,n) => s + Number(n.valor), 0);
+  const totalPago = _lancs.reduce((s,l) => s + Number(l.valor), 0);
+  const pendNF  = _notas.filter(n => n.status !== 'paga').reduce((s,n) => s + Number(n.valor), 0);
+  const pendPed = _pedidos.filter(p => p.status === 'pendente').reduce((s,p) => s + Number(p.valor), 0);
+  const totalPendente = pendNF + pendPed;
 
   const badgeClass = { paga:'badge-paga', enviada:'badge-enviada', emitida:'badge-emitida', atrasada:'badge-atrasada' };
   const badgeLabel = { paga:'Paga', enviada:'Enviada', emitida:'Emitida', atrasada:'Atrasada' };
