@@ -22,7 +22,7 @@
 body{font-family:var(--font);background:var(--black);color:var(--text);min-height:100vh;padding:2rem 1rem;}
 body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(124,58,237,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(124,58,237,0.03) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;}
 body::after{content:'';position:fixed;top:-200px;right:-200px;width:500px;height:500px;background:radial-gradient(circle,rgba(124,58,237,0.1) 0%,transparent 70%);pointer-events:none;}
-.wrap{max-width:680px;margin:0 auto;position:relative;z-index:1;}
+.wrap{max-width:700px;margin:0 auto;position:relative;z-index:1;}
 .logo{display:flex;align-items:center;gap:10px;margin-bottom:2rem;}
 .logo-icon{width:36px;height:36px;background:linear-gradient(135deg,var(--purple),var(--accent));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;}
 .logo-text{font-size:18px;font-weight:700;letter-spacing:-.5px;}
@@ -35,8 +35,8 @@ body::after{content:'';position:fixed;top:-200px;right:-200px;width:500px;height
 .metric-value{font-size:20px;font-weight:700;font-family:var(--mono);}
 .section-label{font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin:1rem 0 .75rem;display:flex;align-items:center;gap:8px;}
 .section-label::after{content:'';flex:1;height:1px;background:var(--border);}
-.item{display:flex;align-items:center;justify-content:space-between;padding:.75rem 1rem;background:var(--dark3);border-radius:8px;margin-bottom:.5rem;gap:.5rem;flex-wrap:wrap;}
-.item-left{flex:1;}
+.item{display:flex;align-items:center;justify-content:space-between;padding:.875rem 1rem;background:var(--dark3);border-radius:8px;margin-bottom:.5rem;gap:.75rem;flex-wrap:wrap;}
+.item-left{flex:1;min-width:0;}
 .item-title{font-size:13px;font-weight:500;}
 .item-sub{font-size:12px;color:var(--text-muted);margin-top:2px;}
 .badge{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:600;}
@@ -45,10 +45,19 @@ body::after{content:'';position:fixed;top:-200px;right:-200px;width:500px;height
 .badge-enviada{background:rgba(96,165,250,.1);color:var(--info);border:1px solid rgba(96,165,250,.2);}
 .badge-emitida{background:rgba(124,58,237,.15);color:var(--purple-ultra);border:1px solid var(--border);}
 .badge-atrasada{background:rgba(248,113,113,.1);color:var(--danger);border:1px solid rgba(248,113,113,.2);}
+.btn-sm{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-muted);font-family:var(--font);transition:all .15s;}
+.btn-sm:hover{border-color:var(--purple);color:var(--purple-ultra);}
 .empty{text-align:center;padding:2rem;color:var(--text-muted);font-size:13px;}
 .loading{text-align:center;padding:4rem;color:var(--text-muted);}
 .error-state{text-align:center;padding:3rem 1rem;}
 .prestador-footer{text-align:center;margin-top:2rem;padding-top:1rem;border-top:1px solid var(--border);}
+
+/* MODAL */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(4px);z-index:100;display:flex;align-items:center;justify-content:center;padding:1rem;}
+.modal{background:var(--dark2);border:1px solid var(--border-strong);border-radius:var(--radius-lg);padding:1.5rem;width:100%;max-width:700px;max-height:90vh;overflow-y:auto;position:relative;}
+.modal::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--purple),var(--accent),var(--purple),transparent);}
+.modal-close{position:absolute;top:1rem;right:1rem;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:18px;}
+.modal-title{font-size:16px;font-weight:600;margin-bottom:1rem;}
 </style>
 </head>
 <body>
@@ -60,17 +69,47 @@ body::after{content:'';position:fixed;top:-200px;right:-200px;width:500px;height
   <div id="root"><div class="loading">Carregando seu extrato...</div></div>
 </div>
 
+<!-- MODAL VISUALIZAR ARQUIVO -->
+<div class="overlay" id="modal-arquivo" style="display:none" onclick="if(event.target===this)fecharModal()">
+  <div class="modal">
+    <div class="modal-title" id="modal-arquivo-titulo">Documento</div>
+    <button class="modal-close" onclick="fecharModal()">✕</button>
+    <div id="modal-arquivo-conteudo" style="margin-top:.5rem;background:var(--dark3);border-radius:8px;min-height:200px;display:flex;align-items:center;justify-content:center;overflow:hidden"></div>
+  </div>
+</div>
+
+<!-- MODAL RECIBO -->
+<div class="overlay" id="modal-recibo" style="display:none" onclick="if(event.target===this)document.getElementById('modal-recibo').style.display='none'">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-title">Recibo de Pagamento</div>
+    <button class="modal-close" onclick="document.getElementById('modal-recibo').style.display='none'">✕</button>
+    <div id="recibo-conteudo"></div>
+    <div style="display:flex;justify-content:flex-end;margin-top:1rem">
+      <button class="btn-sm" style="background:var(--purple);color:white;border-color:var(--purple)" onclick="imprimirRecibo()">⬇ Baixar / Imprimir</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const SUPA_URL = 'https://njyvntmtempjgteezowc.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qeXZudG10ZW1wamd0ZWV6b3djIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwMzY3MTgsImV4cCI6MjA5NjYxMjcxOH0.pbFRrjhHgLIeqV8DG3MgvzvGsHrFv_xbdhcoVxNtT94';
 
-const PRESTADOR = { nome: 'Lucas Teles', cnpj: '66.888.248/0001-49' };
+const PRESTADOR = {
+  nome: 'Lucas Teles',
+  cnpj: '66.888.248/0001-49',
+  pix: '(21) 96019-4636',
+  pixTipo: 'Telefone',
+  email: 'teles.designr@gmail.com'
+};
 
 const fmt = v => 'R$ ' + Number(v).toLocaleString('pt-BR', {minimumFractionDigits:2,maximumFractionDigits:2});
 const fd = d => { if(!d) return '—'; const [y,m,day]=d.split('-'); return `${day}/${m}/${y}`; };
 
 const params = new URLSearchParams(window.location.search);
 const clienteId = params.get('id');
+
+// Global state
+let _cliente = null, _notas = [], _lancs = [];
 
 async function init() {
   if (!clienteId) {
@@ -92,16 +131,16 @@ async function init() {
     return;
   }
 
+  _cliente = cliente; _notas = notas||[]; _lancs = lancs||[];
   document.title = `Extrato — ${cliente.nome}`;
 
-  const totalPago = (lancs||[]).reduce((s,l) => s + Number(l.valor), 0);
-  const totalPendente = (notas||[]).filter(n => n.status !== 'paga').reduce((s,n) => s + Number(n.valor), 0);
+  const totalPago = _lancs.filter(l=>!l.status_pgto||l.status_pgto==='recebido').reduce((s,l) => s + Number(l.valor), 0);
+  const totalPendente = _notas.filter(n => n.status !== 'paga').reduce((s,n) => s + Number(n.valor), 0);
 
   const badgeClass = { paga:'badge-paga', enviada:'badge-enviada', emitida:'badge-emitida', atrasada:'badge-atrasada' };
   const badgeLabel = { paga:'Paga', enviada:'Enviada', emitida:'Emitida', atrasada:'Atrasada' };
 
   document.getElementById('root').innerHTML = `
-    <!-- CABEÇALHO CLIENTE -->
     <div class="card card-glow">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem">
         <div>
@@ -114,56 +153,149 @@ async function init() {
         </div>
       </div>
       <div class="metric-row">
-        <div class="metric">
-          <div class="metric-label">Total pago</div>
-          <div class="metric-value" style="color:var(--success)">${fmt(totalPago)}</div>
-        </div>
-        <div class="metric">
-          <div class="metric-label">Pendente</div>
-          <div class="metric-value" style="color:${totalPendente > 0 ? 'var(--warning)' : 'var(--success)'}">${fmt(totalPendente)}</div>
-        </div>
-        <div class="metric">
-          <div class="metric-label">Notas emitidas</div>
-          <div class="metric-value" style="color:var(--purple-ultra)">${(notas||[]).length}</div>
-        </div>
+        <div class="metric"><div class="metric-label">Total pago</div><div class="metric-value" style="color:var(--success)">${fmt(totalPago)}</div></div>
+        <div class="metric"><div class="metric-label">Pendente</div><div class="metric-value" style="color:${totalPendente > 0 ? 'var(--warning)' : 'var(--success)'}">${fmt(totalPendente)}</div></div>
+        <div class="metric"><div class="metric-label">Notas emitidas</div><div class="metric-value" style="color:var(--purple-ultra)">${_notas.length}</div></div>
       </div>
     </div>
 
     <!-- NOTAS FISCAIS -->
     <div class="card">
       <div class="section-label">Notas fiscais</div>
-      ${(notas||[]).length ? (notas||[]).map(n => `
+      ${_notas.length ? _notas.map(n => `
         <div class="item">
           <div class="item-left">
             <div class="item-title"><span style="font-family:var(--mono);color:var(--purple-ultra)">NF ${n.numero}</span> · ${n.descricao || '—'}</div>
             <div class="item-sub">Emissão: ${fd(n.data_emissao)} · Vencimento: ${fd(n.data_vencimento)}</div>
           </div>
-          <div style="display:flex;align-items:center;gap:.75rem">
-            <div style="font-family:var(--mono);font-size:15px;font-weight:600">${fmt(n.valor)}</div>
+          <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;justify-content:flex-end">
+            <div style="font-family:var(--mono);font-size:14px;font-weight:600">${fmt(n.valor)}</div>
             <span class="badge ${badgeClass[n.status]||'badge-emitida'}">${badgeLabel[n.status]||n.status}</span>
+            ${n.anexo_url ? `<button class="btn-sm" onclick="verAnexo('${n.id}')">📎 Ver NF</button>` : ''}
           </div>
         </div>`).join('') : '<div class="empty">Nenhuma nota fiscal emitida ainda.</div>'}
     </div>
 
     <!-- PAGAMENTOS -->
     <div class="card">
-      <div class="section-label">Pagamentos recebidos</div>
-      ${(lancs||[]).length ? (lancs||[]).map(l => `
+      <div class="section-label">Pagamentos</div>
+      ${_lancs.length ? _lancs.map(l => `
         <div class="item">
           <div class="item-left">
             <div class="item-title">${l.descricao || 'Pagamento recebido'}</div>
             <div class="item-sub">${fd(l.data)}${l.nf_numero ? ' · ' + l.nf_numero : ''}</div>
           </div>
-          <div style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--success)">${fmt(l.valor)}</div>
+          <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;justify-content:flex-end">
+            <div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--success)">${fmt(l.valor)}</div>
+            ${l.comprovante_url ? `<button class="btn-sm" onclick="verComprovante('${l.id}')">📎 Comprovante</button>` : ''}
+            <button class="btn-sm" onclick="gerarRecibo('${l.id}')">🧾 Recibo</button>
+          </div>
         </div>`).join('') : '<div class="empty">Nenhum pagamento registrado ainda.</div>'}
     </div>
 
-    <!-- RODAPÉ -->
     <div class="prestador-footer">
       <div style="font-size:12px;color:var(--text-muted)">Emitido por <strong style="color:var(--text)">${PRESTADOR.nome}</strong> · CNPJ ${PRESTADOR.cnpj}</div>
       <div style="font-size:11px;color:var(--text-dim);margin-top:4px">Gerado em ${new Date().toLocaleDateString('pt-BR')} · MEI Flow</div>
     </div>
   `;
+}
+
+function fecharModal() {
+  document.getElementById('modal-arquivo').style.display = 'none';
+}
+
+function verAnexo(nfId) {
+  const n = _notas.find(x => x.id == nfId);
+  if (!n || !n.anexo_url) return;
+  document.getElementById('modal-arquivo-titulo').textContent = 'Nota Fiscal NF ' + n.numero;
+  const c = document.getElementById('modal-arquivo-conteudo');
+  if (n.anexo_tipo === 'application/pdf') {
+    c.innerHTML = `<iframe src="${n.anexo_url}" style="width:100%;height:70vh;border:none;border-radius:8px"></iframe>`;
+  } else {
+    c.innerHTML = `<img src="${n.anexo_url}" style="max-width:100%;max-height:70vh;border-radius:8px;object-fit:contain">`;
+  }
+  document.getElementById('modal-arquivo').style.display = 'flex';
+}
+
+function verComprovante(lancId) {
+  const l = _lancs.find(x => x.id == lancId);
+  if (!l || !l.comprovante_url) return;
+  document.getElementById('modal-arquivo-titulo').textContent = 'Comprovante — ' + (l.descricao || 'Pagamento');
+  const c = document.getElementById('modal-arquivo-conteudo');
+  if (l.comprovante_tipo === 'application/pdf') {
+    c.innerHTML = `<iframe src="${l.comprovante_url}" style="width:100%;height:70vh;border:none;border-radius:8px"></iframe>`;
+  } else {
+    c.innerHTML = `<img src="${l.comprovante_url}" style="max-width:100%;max-height:70vh;border-radius:8px;object-fit:contain">`;
+  }
+  document.getElementById('modal-arquivo').style.display = 'flex';
+}
+
+function gerarRecibo(lancId) {
+  const l = _lancs.find(x => x.id == lancId);
+  if (!l) return;
+  const num = String(l.id).padStart(4,'0');
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=110x110&data=${encodeURIComponent(PRESTADOR.pix)}`;
+
+  const html = `
+  <div style="font-family:'Helvetica Neue',Arial,sans-serif;color:#1a1a2e;background:#fff;padding:1.5rem;border-radius:8px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1.5rem;padding-bottom:1.25rem;border-bottom:2px solid #7c3aed">
+      <div>
+        <div style="font-size:20px;font-weight:700;color:#7c3aed">${PRESTADOR.nome}</div>
+        <div style="font-size:12px;color:#666;margin-top:3px">CNPJ: ${PRESTADOR.cnpj}</div>
+        <div style="font-size:12px;color:#666">${PRESTADOR.email}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:#888">Recibo de Pagamento</div>
+        <div style="font-size:18px;font-weight:700;color:#7c3aed;margin-top:2px">#${num}</div>
+        <div style="font-size:12px;color:#666">${fd(l.data)}</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr auto;gap:1rem;margin-bottom:1.25rem">
+      <div>
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;color:#888;margin-bottom:5px">Recebido de</div>
+        <div style="font-size:15px;font-weight:600">${_cliente.nome}</div>
+        ${_cliente.cnpj ? `<div style="font-size:12px;color:#666">CNPJ/CPF: ${_cliente.cnpj}</div>` : ''}
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;color:#888;margin-bottom:5px">Valor</div>
+        <div style="font-size:26px;font-weight:700;color:#059669">${fmt(l.valor)}</div>
+      </div>
+    </div>
+
+    <div style="background:#f8f7ff;border-radius:8px;padding:1rem;margin-bottom:1.25rem;border-left:3px solid #7c3aed">
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;color:#888;margin-bottom:5px">Descrição</div>
+      <div style="font-size:13px">${l.descricao || 'Serviços prestados'}${l.nf_numero ? ' · ' + l.nf_numero : ''}</div>
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;background:#f0fdf4;border-radius:8px;padding:1rem;border:1px solid #bbf7d0;margin-bottom:1.25rem">
+      <div>
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:#16a34a;margin-bottom:3px">Pix</div>
+        <div style="font-size:13px;font-weight:600;color:#15803d">${PRESTADOR.pix}</div>
+        <div style="font-size:11px;color:#16a34a">Chave ${PRESTADOR.pixTipo}</div>
+      </div>
+      <img src="${qrUrl}" width="70" height="70" style="border-radius:6px" alt="QR Pix">
+    </div>
+
+    <div style="text-align:center;padding-top:1rem;border-top:1px solid #eee">
+      <div style="font-size:11px;color:#999">Declaro que recebi <strong>${fmt(l.valor)}</strong> pelos serviços descritos acima.</div>
+      <div style="margin-top:1.5rem;border-top:1px dashed #ccc;padding-top:.75rem;display:inline-block;min-width:220px">
+        <div style="font-size:12px;font-weight:500;color:#444">${PRESTADOR.nome}</div>
+        <div style="font-size:11px;color:#999">CNPJ: ${PRESTADOR.cnpj}</div>
+      </div>
+      <div style="font-size:10px;color:#bbb;margin-top:.5rem">Gerado por MEI Flow · ${new Date().toLocaleDateString('pt-BR')}</div>
+    </div>
+  </div>`;
+
+  document.getElementById('recibo-conteudo').innerHTML = html;
+  document.getElementById('modal-recibo').style.display = 'flex';
+}
+
+function imprimirRecibo() {
+  const conteudo = document.getElementById('recibo-conteudo').innerHTML;
+  const win = window.open('','_blank');
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Recibo — MEI Flow</title><style>body{margin:0;font-family:'Helvetica Neue',Arial,sans-serif;}@media print{body{margin:0;}}</style></head><body>${conteudo}<script>window.onload=()=>{window.print();}<\/script></body></html>`);
+  win.document.close();
 }
 
 init();
