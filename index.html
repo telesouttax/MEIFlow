@@ -25,10 +25,23 @@ const PRESTADOR = {
 // =========================================
 let reciboLancId = null;
 
+let reciboEmailData = null; // stores {email, nome, valor, desc, data, num}
+
 function gerarRecibo(lancId) {
   const l = DB.lancs.find(x => x.id == lancId);
   if (!l) return;
   reciboLancId = lancId;
+  const c = DB.clientes.find(x => x.id == l.cId);
+  // Store for email sending
+  reciboEmailData = {
+    email: c ? (c.email||'') : '',
+    nome: c ? (c.resp||c.nome) : cNome(l.cId),
+    valor: l.valor,
+    desc: l.desc || 'Serviços prestados',
+    data: l.data,
+    nf: l.nf,
+    num: String(lancId).padStart(4,'0')
+  };
   const c = DB.clientes.find(x => x.id == l.cId);
   const nf = DB.notas.find(n => l.nf && n.num === l.nf.replace('NF ',''));
   const dataFmt = fd(l.data);
@@ -416,7 +429,10 @@ function renderPedidos() {
         </select>
       </td>
       <td style="display:flex;gap:6px;align-items:center">
-        ${p.status==='pago'?`<button class="btn btn-ghost btn-sm" onclick="gerarReciboPedido(${p.id})" style="font-size:12px">🧾 Recibo</button>`:''}
+        ${p.status==='pago'?`
+          <button class="btn btn-ghost btn-sm" onclick="gerarReciboPedido(${p.id})" style="font-size:12px">🧾 Recibo</button>
+          <button class="btn btn-ghost btn-sm" onclick="enviarEmailPedido(${p.id})" style="font-size:12px">📧 E-mail</button>
+        `:''}
         <button class="btn btn-ghost btn-sm" onclick="editarPedido(${p.id})" style="font-size:12px">✏</button>
         <button class="btn-icon" onclick="delPedido(${p.id})">✕</button>
       </td>
@@ -544,6 +560,97 @@ function gerarReciboPedido(pedId) {
   DB.lancs = [...DB.lancs, fakeLanc];
   gerarRecibo(pedId);
   DB.lancs = prev;
+}
+
+
+// =========================================
+// ENVIO DE E-MAIL VIA GMAIL (mailto)
+// =========================================
+function buildEmailBody(data) {
+  return `Olá, ${data.nome}!
+
+Passando para confirmar que recebemos o seu pagamento com sucesso. Segue o recibo abaixo:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  RECIBO DE PAGAMENTO #${data.num}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Prestador:  ${PRESTADOR.nome}
+CNPJ:       ${PRESTADOR.cnpj}
+
+Recebido de: ${data.nome}
+Serviço:     ${data.desc}${data.nf ? '\nNota Fiscal: ' + data.nf : ''}
+Valor:       R$ ${Number(data.valor).toLocaleString('pt-BR',{minimumFractionDigits:2})}
+Data:        ${data.data ? data.data.split('-').reverse().join('/') : new Date().toLocaleDateString('pt-BR')}
+
+Pix: ${PRESTADOR.pix} (${PRESTADOR.pixTipo})
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Obrigado pela confiança! Qualquer dúvida estou à disposição.
+
+Atenciosamente,
+${PRESTADOR.nome}`;
+}
+
+function abrirGmail(email, assunto, corpo) {
+  const url = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}&su=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`;
+  window.open(url, '_blank');
+  toast('📧 Gmail aberto com e-mail pronto!');
+}
+
+function enviarReciboEmail() {
+  if (!reciboEmailData) { toast('⚠ Nenhum recibo aberto','warn'); return; }
+  const d = reciboEmailData;
+  if (!d.email) {
+    const email = prompt('E-mail do cliente (não cadastrado):', '');
+    if (!email) return;
+    d.email = email;
+  }
+  const assunto = `Recibo de pagamento #${d.num} — ${PRESTADOR.nome}`;
+  const corpo = buildEmailBody(d);
+  abrirGmail(d.email, assunto, corpo);
+}
+
+function enviarEmailLanc(lancId) {
+  const l = DB.lancs.find(x => x.id == lancId);
+  if (!l) return;
+  const c = DB.clientes.find(x => x.id == l.cId);
+  const email = c ? (c.email||'') : '';
+  if (!email) {
+    const e = prompt('E-mail do cliente (não cadastrado):', '');
+    if (!e) return;
+  }
+  const data = {
+    email: email || prompt('E-mail do cliente:', '')||'',
+    nome: c ? (c.resp||c.nome) : cNome(l.cId),
+    valor: l.valor,
+    desc: l.desc || 'Serviços prestados',
+    data: l.data,
+    nf: l.nf,
+    num: String(l.id).padStart(4,'0')
+  };
+  if (!data.email) return;
+  const assunto = `Recibo de pagamento #${data.num} — ${PRESTADOR.nome}`;
+  abrirGmail(data.email, assunto, buildEmailBody(data));
+}
+
+function enviarEmailPedido(pedId) {
+  const p = DB.pedidos.find(x => x.id == pedId);
+  if (!p || p.status !== 'pago') return;
+  const c = DB.clientes.find(x => x.id == p.cId);
+  const email = c ? (c.email||'') : '';
+  const data = {
+    email: email || prompt('E-mail do cliente:', '')||'',
+    nome: c ? (c.resp||c.nome) : cNome(p.cId),
+    valor: p.valor,
+    desc: p.desc || 'Serviço avulso',
+    data: p.data,
+    nf: null,
+    num: String(p.id).padStart(4,'0')
+  };
+  if (!data.email) return;
+  const assunto = `Recibo de pagamento #${data.num} — ${PRESTADOR.nome}`;
+  abrirGmail(data.email, assunto, buildEmailBody(data));
 }
 
 </script>
@@ -1147,6 +1254,7 @@ tr:hover td{background:rgba(124,58,237,.04);}
     <div id="recibo-preview" style="background:#fff;border-radius:var(--radius-sm);padding:0;margin-bottom:1.25rem;overflow:hidden"></div>
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-recibo')">Fechar</button>
+      <button class="btn btn-ghost" style="width:auto;gap:6px" onclick="enviarReciboEmail()">📧 Enviar por e-mail</button>
       <button class="btn btn-primary" style="width:auto" onclick="imprimirRecibo()">⬇ Baixar / Imprimir PDF</button>
     </div>
   </div>
@@ -2032,10 +2140,23 @@ const PRESTADOR = {
 // =========================================
 let reciboLancId = null;
 
+let reciboEmailData = null; // stores {email, nome, valor, desc, data, num}
+
 function gerarRecibo(lancId) {
   const l = DB.lancs.find(x => x.id == lancId);
   if (!l) return;
   reciboLancId = lancId;
+  const c = DB.clientes.find(x => x.id == l.cId);
+  // Store for email sending
+  reciboEmailData = {
+    email: c ? (c.email||'') : '',
+    nome: c ? (c.resp||c.nome) : cNome(l.cId),
+    valor: l.valor,
+    desc: l.desc || 'Serviços prestados',
+    data: l.data,
+    nf: l.nf,
+    num: String(lancId).padStart(4,'0')
+  };
   const c = DB.clientes.find(x => x.id == l.cId);
   const nf = DB.notas.find(n => l.nf && n.num === l.nf.replace('NF ',''));
   const dataFmt = fd(l.data);
@@ -2379,7 +2500,10 @@ function renderPedidos() {
         </select>
       </td>
       <td style="display:flex;gap:6px;align-items:center">
-        ${p.status==='pago'?`<button class="btn btn-ghost btn-sm" onclick="gerarReciboPedido(${p.id})" style="font-size:12px">🧾 Recibo</button>`:''}
+        ${p.status==='pago'?`
+          <button class="btn btn-ghost btn-sm" onclick="gerarReciboPedido(${p.id})" style="font-size:12px">🧾 Recibo</button>
+          <button class="btn btn-ghost btn-sm" onclick="enviarEmailPedido(${p.id})" style="font-size:12px">📧 E-mail</button>
+        `:''}
         <button class="btn btn-ghost btn-sm" onclick="editarPedido(${p.id})" style="font-size:12px">✏</button>
         <button class="btn-icon" onclick="delPedido(${p.id})">✕</button>
       </td>
@@ -2507,6 +2631,97 @@ function gerarReciboPedido(pedId) {
   DB.lancs = [...DB.lancs, fakeLanc];
   gerarRecibo(pedId);
   DB.lancs = prev;
+}
+
+
+// =========================================
+// ENVIO DE E-MAIL VIA GMAIL (mailto)
+// =========================================
+function buildEmailBody(data) {
+  return `Olá, ${data.nome}!
+
+Passando para confirmar que recebemos o seu pagamento com sucesso. Segue o recibo abaixo:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  RECIBO DE PAGAMENTO #${data.num}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Prestador:  ${PRESTADOR.nome}
+CNPJ:       ${PRESTADOR.cnpj}
+
+Recebido de: ${data.nome}
+Serviço:     ${data.desc}${data.nf ? '\nNota Fiscal: ' + data.nf : ''}
+Valor:       R$ ${Number(data.valor).toLocaleString('pt-BR',{minimumFractionDigits:2})}
+Data:        ${data.data ? data.data.split('-').reverse().join('/') : new Date().toLocaleDateString('pt-BR')}
+
+Pix: ${PRESTADOR.pix} (${PRESTADOR.pixTipo})
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Obrigado pela confiança! Qualquer dúvida estou à disposição.
+
+Atenciosamente,
+${PRESTADOR.nome}`;
+}
+
+function abrirGmail(email, assunto, corpo) {
+  const url = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}&su=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`;
+  window.open(url, '_blank');
+  toast('📧 Gmail aberto com e-mail pronto!');
+}
+
+function enviarReciboEmail() {
+  if (!reciboEmailData) { toast('⚠ Nenhum recibo aberto','warn'); return; }
+  const d = reciboEmailData;
+  if (!d.email) {
+    const email = prompt('E-mail do cliente (não cadastrado):', '');
+    if (!email) return;
+    d.email = email;
+  }
+  const assunto = `Recibo de pagamento #${d.num} — ${PRESTADOR.nome}`;
+  const corpo = buildEmailBody(d);
+  abrirGmail(d.email, assunto, corpo);
+}
+
+function enviarEmailLanc(lancId) {
+  const l = DB.lancs.find(x => x.id == lancId);
+  if (!l) return;
+  const c = DB.clientes.find(x => x.id == l.cId);
+  const email = c ? (c.email||'') : '';
+  if (!email) {
+    const e = prompt('E-mail do cliente (não cadastrado):', '');
+    if (!e) return;
+  }
+  const data = {
+    email: email || prompt('E-mail do cliente:', '')||'',
+    nome: c ? (c.resp||c.nome) : cNome(l.cId),
+    valor: l.valor,
+    desc: l.desc || 'Serviços prestados',
+    data: l.data,
+    nf: l.nf,
+    num: String(l.id).padStart(4,'0')
+  };
+  if (!data.email) return;
+  const assunto = `Recibo de pagamento #${data.num} — ${PRESTADOR.nome}`;
+  abrirGmail(data.email, assunto, buildEmailBody(data));
+}
+
+function enviarEmailPedido(pedId) {
+  const p = DB.pedidos.find(x => x.id == pedId);
+  if (!p || p.status !== 'pago') return;
+  const c = DB.clientes.find(x => x.id == p.cId);
+  const email = c ? (c.email||'') : '';
+  const data = {
+    email: email || prompt('E-mail do cliente:', '')||'',
+    nome: c ? (c.resp||c.nome) : cNome(p.cId),
+    valor: p.valor,
+    desc: p.desc || 'Serviço avulso',
+    data: p.data,
+    nf: null,
+    num: String(p.id).padStart(4,'0')
+  };
+  if (!data.email) return;
+  const assunto = `Recibo de pagamento #${data.num} — ${PRESTADOR.nome}`;
+  abrirGmail(data.email, assunto, buildEmailBody(data));
 }
 
 </script>
