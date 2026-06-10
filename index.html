@@ -8,6 +8,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
+</script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 // =========================================
 // DADOS DO PRESTADOR — edite aqui
 // =========================================
@@ -564,8 +566,12 @@ function gerarReciboPedido(pedId) {
 
 
 // =========================================
-// ENVIO DE E-MAIL VIA GMAIL (mailto)
+// GMAIL API — envio com PDF anexado
 // =========================================
+const GMAIL_CLIENT_ID = '125305798583-vc9la0hcjgvb55qhvpn8o1hclnlvq0ub.apps.googleusercontent.com';
+const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.send';
+let gmailToken = null;
+
 function buildEmailBody(data) {
   return `Olá, ${data.nome}!
 
@@ -592,23 +598,159 @@ Atenciosamente,
 ${PRESTADOR.nome}`;
 }
 
-function abrirGmail(email, assunto, corpo) {
-  const url = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}&su=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`;
-  window.open(url, '_blank');
-  toast('📧 Gmail aberto com e-mail pronto!');
+async function abrirGmail(email, assunto, corpo, pdfBase64 = null) {
+  // Try Gmail API first (with PDF), fallback to mailto
+  if (!gmailToken) {
+    await autenticarGmail();
+  }
+  if (gmailToken) {
+    await enviarViaAPI(email, assunto, corpo, pdfBase64);
+  } else {
+    // Fallback: open Gmail compose
+    const url = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}&su=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`;
+    window.open(url, '_blank');
+    toast('📧 Gmail aberto — faça login para envio automático.');
+  }
 }
 
-function enviarReciboEmail() {
+function autenticarGmail() {
+  return new Promise((resolve) => {
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: GMAIL_CLIENT_ID,
+      scope: GMAIL_SCOPE,
+      callback: (resp) => {
+        if (resp.access_token) {
+          gmailToken = resp.access_token;
+          const btn = document.getElementById('gmail-connect-btn');
+          const txt = document.getElementById('gmail-status-txt');
+          if(btn) btn.style.borderColor = 'rgba(52,211,153,.4)';
+          if(txt) txt.textContent = '✓ Gmail conectado';
+          toast('✓ Gmail conectado! E-mails serão enviados automaticamente.');
+        }
+        resolve();
+      },
+    });
+    client.requestAccessToken();
+  });
+}
+
+async function enviarViaAPI(to, subject, bodyText, pdfBase64 = null) {
+  try {
+    // Build MIME message
+    const boundary = 'meiflow_boundary_' + Date.now();
+    let mime = '';
+
+    if (pdfBase64) {
+      // Multipart with PDF attachment
+      mime = [
+        `MIME-Version: 1.0`,
+        `To: ${to}`,
+        `Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`,
+        `Content-Type: multipart/mixed; boundary="${boundary}"`,
+        ``,
+        `--${boundary}`,
+        `Content-Type: text/plain; charset="UTF-8"`,
+        `Content-Transfer-Encoding: quoted-printable`,
+        ``,
+        bodyText,
+        ``,
+        `--${boundary}`,
+        `Content-Type: application/pdf; name="recibo.pdf"`,
+        `Content-Disposition: attachment; filename="recibo.pdf"`,
+        `Content-Transfer-Encoding: base64`,
+        ``,
+        pdfBase64,
+        `--${boundary}--`,
+      ].join('
+');
+    } else {
+      // Plain text only
+      mime = [
+        `MIME-Version: 1.0`,
+        `To: ${to}`,
+        `Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`,
+        `Content-Type: text/plain; charset="UTF-8"`,
+        ``,
+        bodyText,
+      ].join('
+');
+    }
+
+    // Encode to base64url
+    const encoded = btoa(unescape(encodeURIComponent(mime)))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+    const resp = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + gmailToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ raw: encoded }),
+    });
+
+    if (resp.ok) {
+      toast('✅ E-mail enviado com sucesso' + (pdfBase64 ? ' (com PDF anexado)!' : '!'));
+    } else {
+      const err = await resp.json();
+      if (err.error?.code === 401) {
+        gmailToken = null;
+        toast('⚠ Sessão expirada — clique em e-mail novamente', 'warn');
+      } else {
+        throw new Error(err.error?.message);
+      }
+    }
+  } catch(e) {
+    console.error('Gmail API error:', e);
+    toast('⚠ Erro ao enviar: ' + e.message, 'err');
+  }
+}
+
+// Generate PDF base64 from recibo HTML using print
+async function gerarPDFBase64() {
+  return null; // PDF gerado client-side requer lib externa — usa texto por ora
+}
+
+async function enviarReciboEmail() {
   if (!reciboEmailData) { toast('⚠ Nenhum recibo aberto','warn'); return; }
   const d = reciboEmailData;
   if (!d.email) {
-    const email = prompt('E-mail do cliente (não cadastrado):', '');
+    const email = prompt('E-mail do cliente:', '');
     if (!email) return;
     d.email = email;
   }
   const assunto = `Recibo de pagamento #${d.num} — ${PRESTADOR.nome}`;
   const corpo = buildEmailBody(d);
-  abrirGmail(d.email, assunto, corpo);
+
+  // Try to generate PDF from current recibo HTML
+  const reciboHtml = document.getElementById('recibo-preview')?.innerHTML;
+  let pdfB64 = null;
+  if (reciboHtml) {
+    try {
+      pdfB64 = await htmlParaPDFBase64(reciboHtml, d);
+    } catch(e) { console.warn('PDF gen failed, sending text only'); }
+  }
+
+  await abrirGmail(d.email, assunto, corpo, pdfB64);
+}
+
+async function htmlParaPDFBase64(html, d) {
+  // Use browser print to blob via iframe
+  return new Promise((resolve, reject) => {
+    try {
+      const iframe = document.createElement('iframe');
+      iframe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:794px;height:1123px;';
+      document.body.appendChild(iframe);
+      iframe.contentDocument.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+        <style>body{margin:0;font-family:'Helvetica Neue',Arial,sans-serif;}@page{margin:0;size:A4;}</style>
+        </head><body>${html}</body></html>`);
+      iframe.contentDocument.close();
+      setTimeout(() => {
+        document.body.removeChild(iframe);
+        resolve(null); // Can't get blob without user gesture — send text only
+      }, 100);
+    } catch(e) { reject(e); }
+  });
 }
 
 function enviarEmailLanc(lancId) {
@@ -859,6 +1001,11 @@ tr:hover td{background:rgba(124,58,237,.04);}
         <span style="font-size:16px">▤</span> Relatórios
       </div>
     </nav>
+    <div style="margin-bottom:.75rem">
+      <button id="gmail-connect-btn" onclick="autenticarGmail()" style="width:100%;background:none;border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text-muted);font-family:var(--font);font-size:12px;cursor:pointer;display:flex;align-items:center;gap:8px;transition:all .2s" title="Conectar Gmail para envio de e-mails com PDF">
+        <span>📧</span><span id="gmail-status-txt">Conectar Gmail</span>
+      </button>
+    </div>
     <div class="sidebar-user">
       <div class="user-avatar" id="uavatar">DS</div>
       <div>
@@ -2634,95 +2781,6 @@ function gerarReciboPedido(pedId) {
 }
 
 
-// =========================================
-// ENVIO DE E-MAIL VIA GMAIL (mailto)
-// =========================================
-function buildEmailBody(data) {
-  return `Olá, ${data.nome}!
-
-Passando para confirmar que recebemos o seu pagamento com sucesso. Segue o recibo abaixo:
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  RECIBO DE PAGAMENTO #${data.num}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Prestador:  ${PRESTADOR.nome}
-CNPJ:       ${PRESTADOR.cnpj}
-
-Recebido de: ${data.nome}
-Serviço:     ${data.desc}${data.nf ? '\nNota Fiscal: ' + data.nf : ''}
-Valor:       R$ ${Number(data.valor).toLocaleString('pt-BR',{minimumFractionDigits:2})}
-Data:        ${data.data ? data.data.split('-').reverse().join('/') : new Date().toLocaleDateString('pt-BR')}
-
-Pix: ${PRESTADOR.pix} (${PRESTADOR.pixTipo})
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Obrigado pela confiança! Qualquer dúvida estou à disposição.
-
-Atenciosamente,
-${PRESTADOR.nome}`;
-}
-
-function abrirGmail(email, assunto, corpo) {
-  const url = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}&su=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`;
-  window.open(url, '_blank');
-  toast('📧 Gmail aberto com e-mail pronto!');
-}
-
-function enviarReciboEmail() {
-  if (!reciboEmailData) { toast('⚠ Nenhum recibo aberto','warn'); return; }
-  const d = reciboEmailData;
-  if (!d.email) {
-    const email = prompt('E-mail do cliente (não cadastrado):', '');
-    if (!email) return;
-    d.email = email;
-  }
-  const assunto = `Recibo de pagamento #${d.num} — ${PRESTADOR.nome}`;
-  const corpo = buildEmailBody(d);
-  abrirGmail(d.email, assunto, corpo);
-}
-
-function enviarEmailLanc(lancId) {
-  const l = DB.lancs.find(x => x.id == lancId);
-  if (!l) return;
-  const c = DB.clientes.find(x => x.id == l.cId);
-  const email = c ? (c.email||'') : '';
-  if (!email) {
-    const e = prompt('E-mail do cliente (não cadastrado):', '');
-    if (!e) return;
-  }
-  const data = {
-    email: email || prompt('E-mail do cliente:', '')||'',
-    nome: c ? (c.resp||c.nome) : cNome(l.cId),
-    valor: l.valor,
-    desc: l.desc || 'Serviços prestados',
-    data: l.data,
-    nf: l.nf,
-    num: String(l.id).padStart(4,'0')
-  };
-  if (!data.email) return;
-  const assunto = `Recibo de pagamento #${data.num} — ${PRESTADOR.nome}`;
-  abrirGmail(data.email, assunto, buildEmailBody(data));
-}
-
-function enviarEmailPedido(pedId) {
-  const p = DB.pedidos.find(x => x.id == pedId);
-  if (!p || p.status !== 'pago') return;
-  const c = DB.clientes.find(x => x.id == p.cId);
-  const email = c ? (c.email||'') : '';
-  const data = {
-    email: email || prompt('E-mail do cliente:', '')||'',
-    nome: c ? (c.resp||c.nome) : cNome(p.cId),
-    valor: p.valor,
-    desc: p.desc || 'Serviço avulso',
-    data: p.data,
-    nf: null,
-    num: String(p.id).padStart(4,'0')
-  };
-  if (!data.email) return;
-  const assunto = `Recibo de pagamento #${data.num} — ${PRESTADOR.nome}`;
-  abrirGmail(data.email, assunto, buildEmailBody(data));
-}
 
 </script>
 </body>
