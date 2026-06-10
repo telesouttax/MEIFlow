@@ -480,43 +480,50 @@ async function updPedidoStatus(id, status) {
   const prevStatus = p.status;
   p.status = status;
 
+  // Update pedido status
   if(sb&&!SUPA_URL.includes('COLE')) {
-    await sb.from('pedidos').update({status}).eq('id',id);
+    const {error:eUpd} = await sb.from('pedidos').update({status}).eq('id', id);
+    if(eUpd) { toast('⚠ Erro ao atualizar: '+eUpd.message,'err'); p.status=prevStatus; return; }
+  }
 
-    // Auto-create lancamento when marked as pago
-    if(status==='pago' && prevStatus!=='pago') {
-      const lancRow = {
-        cliente_id: p.cId,
-        descricao: p.desc || 'Pedido avulso',
-        valor: p.valor,
-        data: p.data || new Date().toISOString().split('T')[0],
-        nf_numero: null,
-        status_pgto: 'recebido',
-        pedido_id: p.id
-      };
-      const {data:ld} = await sb.from('lancamentos').insert(lancRow).select().single();
-      if(ld) DB.lancs.push({id:ld.id,cId:ld.cliente_id,desc:ld.descricao,valor:ld.valor,data:ld.data,nf:null,status:'recebido',comprovante:null,comprovanteNome:null,comprovanteTipo:null});
-      toast('✓ Pago! Lançamento criado automaticamente 🎉');
-    }
-    // Remove lancamento if reverted from pago
-    else if(status!=='pago' && prevStatus==='pago') {
-      await sb.from('lancamentos').delete().eq('pedido_id', p.id);
-      DB.lancs = DB.lancs.filter(l=>l.pedidoId !== p.id);
-      toast('✓ Status atualizado');
+  // Auto-create lancamento when marked as pago
+  if(status==='pago' && prevStatus!=='pago') {
+    const hoje = new Date().toISOString().split('T')[0];
+    const lancRow = {
+      cliente_id: p.cId,
+      descricao: p.desc || 'Pedido avulso',
+      valor: p.valor,
+      data: p.data || hoje,
+      nf_numero: null,
+      status_pgto: 'recebido'
+    };
+    if(sb&&!SUPA_URL.includes('COLE')) {
+      const {data:ld, error:eLanc} = await sb.from('lancamentos').insert(lancRow).select().single();
+      if(eLanc) {
+        toast('⚠ Erro ao criar lançamento: '+eLanc.message,'err');
+      } else {
+        DB.lancs.push({
+          id:ld.id, cId:ld.cliente_id, desc:ld.descricao,
+          valor:ld.valor, data:ld.data, nf:null,
+          status:'recebido', comprovante:null,
+          comprovanteNome:null, comprovanteTipo:null
+        });
+        toast('✓ Pago! Lançamento criado em Lançamentos 🎉');
+      }
     } else {
-      toast('✓ Status atualizado');
+      const lid = DB.lancs.length ? Math.max(...DB.lancs.map(l=>l.id))+1 : 1;
+      DB.lancs.push({id:lid, cId:p.cId, desc:p.desc||'Pedido avulso',
+        valor:p.valor, data:p.data||hoje, nf:null,
+        status:'recebido', comprovante:null,
+        comprovanteNome:null, comprovanteTipo:null});
+      save(null,null);
+      toast('✓ Pago! Lançamento criado em Lançamentos 🎉');
     }
   } else {
-    // Offline fallback
-    if(status==='pago' && prevStatus!=='pago') {
-      const lid = DB.lancs.length?Math.max(...DB.lancs.map(l=>l.id))+1:1;
-      DB.lancs.push({id:lid,cId:p.cId,desc:p.desc||'Pedido avulso',valor:p.valor,data:p.data||new Date().toISOString().split('T')[0],nf:null,status:'recebido',comprovante:null,comprovanteNome:null,comprovanteTipo:null,pedidoId:p.id});
-      toast('✓ Pago! Lançamento criado automaticamente 🎉');
-    } else {
-      toast('✓ Status atualizado');
-    }
-    save(null,null);
+    if(!sb||SUPA_URL.includes('COLE')) save(null,null);
+    toast('✓ Status atualizado');
   }
+
   renderPedidos(); renderLanc(); renderDash();
 }
 
@@ -2436,43 +2443,50 @@ async function updPedidoStatus(id, status) {
   const prevStatus = p.status;
   p.status = status;
 
+  // Update pedido status
   if(sb&&!SUPA_URL.includes('COLE')) {
-    await sb.from('pedidos').update({status}).eq('id',id);
+    const {error:eUpd} = await sb.from('pedidos').update({status}).eq('id', id);
+    if(eUpd) { toast('⚠ Erro ao atualizar: '+eUpd.message,'err'); p.status=prevStatus; return; }
+  }
 
-    // Auto-create lancamento when marked as pago
-    if(status==='pago' && prevStatus!=='pago') {
-      const lancRow = {
-        cliente_id: p.cId,
-        descricao: p.desc || 'Pedido avulso',
-        valor: p.valor,
-        data: p.data || new Date().toISOString().split('T')[0],
-        nf_numero: null,
-        status_pgto: 'recebido',
-        pedido_id: p.id
-      };
-      const {data:ld} = await sb.from('lancamentos').insert(lancRow).select().single();
-      if(ld) DB.lancs.push({id:ld.id,cId:ld.cliente_id,desc:ld.descricao,valor:ld.valor,data:ld.data,nf:null,status:'recebido',comprovante:null,comprovanteNome:null,comprovanteTipo:null});
-      toast('✓ Pago! Lançamento criado automaticamente 🎉');
-    }
-    // Remove lancamento if reverted from pago
-    else if(status!=='pago' && prevStatus==='pago') {
-      await sb.from('lancamentos').delete().eq('pedido_id', p.id);
-      DB.lancs = DB.lancs.filter(l=>l.pedidoId !== p.id);
-      toast('✓ Status atualizado');
+  // Auto-create lancamento when marked as pago
+  if(status==='pago' && prevStatus!=='pago') {
+    const hoje = new Date().toISOString().split('T')[0];
+    const lancRow = {
+      cliente_id: p.cId,
+      descricao: p.desc || 'Pedido avulso',
+      valor: p.valor,
+      data: p.data || hoje,
+      nf_numero: null,
+      status_pgto: 'recebido'
+    };
+    if(sb&&!SUPA_URL.includes('COLE')) {
+      const {data:ld, error:eLanc} = await sb.from('lancamentos').insert(lancRow).select().single();
+      if(eLanc) {
+        toast('⚠ Erro ao criar lançamento: '+eLanc.message,'err');
+      } else {
+        DB.lancs.push({
+          id:ld.id, cId:ld.cliente_id, desc:ld.descricao,
+          valor:ld.valor, data:ld.data, nf:null,
+          status:'recebido', comprovante:null,
+          comprovanteNome:null, comprovanteTipo:null
+        });
+        toast('✓ Pago! Lançamento criado em Lançamentos 🎉');
+      }
     } else {
-      toast('✓ Status atualizado');
+      const lid = DB.lancs.length ? Math.max(...DB.lancs.map(l=>l.id))+1 : 1;
+      DB.lancs.push({id:lid, cId:p.cId, desc:p.desc||'Pedido avulso',
+        valor:p.valor, data:p.data||hoje, nf:null,
+        status:'recebido', comprovante:null,
+        comprovanteNome:null, comprovanteTipo:null});
+      save(null,null);
+      toast('✓ Pago! Lançamento criado em Lançamentos 🎉');
     }
   } else {
-    // Offline fallback
-    if(status==='pago' && prevStatus!=='pago') {
-      const lid = DB.lancs.length?Math.max(...DB.lancs.map(l=>l.id))+1:1;
-      DB.lancs.push({id:lid,cId:p.cId,desc:p.desc||'Pedido avulso',valor:p.valor,data:p.data||new Date().toISOString().split('T')[0],nf:null,status:'recebido',comprovante:null,comprovanteNome:null,comprovanteTipo:null,pedidoId:p.id});
-      toast('✓ Pago! Lançamento criado automaticamente 🎉');
-    } else {
-      toast('✓ Status atualizado');
-    }
-    save(null,null);
+    if(!sb||SUPA_URL.includes('COLE')) save(null,null);
+    toast('✓ Status atualizado');
   }
+
   renderPedidos(); renderLanc(); renderDash();
 }
 
