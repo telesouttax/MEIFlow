@@ -726,6 +726,7 @@ function gerarRecibo(lancId) {
   reciboEmailData = {
     email: c ? (c.email||'') : '',
     clienteId: l.cId,
+    extratoLink: getLinkExtrato(l.cId),
     nome: c ? (c.resp||c.nome) : cNome(l.cId),
     valor: l.valor,
     desc: l.desc || 'Serviços prestados',
@@ -1232,6 +1233,7 @@ async function updPedidoStatus(id, status) {
       const eData = {
         email,
         clienteId: p.cId,
+        extratoLink: getLinkExtrato(p.cId),
         nome: c ? (c.resp||c.nome) : cNome(p.cId),
         valor: p.valor,
         desc: p.desc || 'Serviço avulso',
@@ -1288,7 +1290,13 @@ const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.send';
 let gmailToken = null;
 
 function buildEmailBody(data) {
-  const extratoLink = (data.clienteId !== undefined && data.clienteId !== null) ? getLinkExtrato(data.clienteId) : null;
+  // Generate extrato link directly here — garantindo que o ID está correto
+  let extratoLink = null;
+  if (data.clienteId !== undefined && data.clienteId !== null && data.clienteId !== '') {
+    extratoLink = getLinkExtrato(data.clienteId);
+  } else if (data.extratoLink) {
+    extratoLink = data.extratoLink;
+  }
   return `Olá, ${data.nome}!
 
 Passando para confirmar que recebemos o seu pagamento com sucesso. Segue o recibo em anexo (PDF).
@@ -1543,6 +1551,7 @@ async function enviarEmailLanc(lancId) {
   const data = {
     email,
     clienteId: l.cId,
+    extratoLink: getLinkExtrato(l.cId),
     nome: c ? (c.resp||c.nome) : cNome(l.cId),
     valor: l.valor,
     desc: l.desc || 'Serviços prestados',
@@ -1574,6 +1583,7 @@ async function enviarEmailPedido(pedId) {
   const data = {
     email,
     clienteId: p.cId,
+    extratoLink: getLinkExtrato(p.cId),
     nome: c ? (c.resp||c.nome) : cNome(p.cId),
     valor: p.valor,
     desc: p.desc || 'Serviço avulso',
@@ -1982,6 +1992,7 @@ async function updNFStatus(id,s){
     const eData = {
       email,
       clienteId: n.cId,
+      extratoLink: getLinkExtrato(n.cId),
       nome: c ? (c.resp||c.nome) : cNome(n.cId),
       valor: n.valor,
       desc: n.desc || 'Serviços prestados',
@@ -2230,9 +2241,12 @@ function openModal(id) {
 
 // LINKS DOS CLIENTES
 function getLinkExtrato(cId) {
-  const origin = window.location.origin;
-  const path = window.location.pathname.replace(/\/[^/]*$/, '');
-  return origin + path + '/extrato.html?id=' + cId;
+  // Monta URL base removendo o arquivo atual (ex: /meiflow.html)
+  const href = window.location.href;
+  const base = href.includes('meiflow.html')
+    ? href.substring(0, href.lastIndexOf('/'))
+    : href.replace(/\/$/, '');
+  return base + '/extrato.html?id=' + cId;
 }
 
 function copiarLinkCliente(cId, nome) {
@@ -2475,6 +2489,7 @@ function gerarRecibo(lancId) {
   reciboEmailData = {
     email: c ? (c.email||'') : '',
     clienteId: l.cId,
+    extratoLink: getLinkExtrato(l.cId),
     nome: c ? (c.resp||c.nome) : cNome(l.cId),
     valor: l.valor,
     desc: l.desc || 'Serviços prestados',
@@ -2934,6 +2949,7 @@ async function updPedidoStatus(id, status) {
       const eData = {
         email,
         clienteId: p.cId,
+        extratoLink: getLinkExtrato(p.cId),
         nome: c ? (c.resp||c.nome) : cNome(p.cId),
         valor: p.valor,
         desc: p.desc || 'Serviço avulso',
