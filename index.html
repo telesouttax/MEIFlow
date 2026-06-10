@@ -7,795 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
-</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-// =========================================
-// DADOS DO PRESTADOR — edite aqui
-// =========================================
-const PRESTADOR = {
-  nome: 'Lucas Teles',
-  cnpj: '66.888.248/0001-49',
-  pix: '(21) 96019-4636',
-  pixTipo: 'Telefone',
-  email: 'lucas.teles@outtax.com.br',
-};
-// =========================================
-
-// =========================================
-// RECIBO PDF
-// =========================================
-let reciboLancId = null;
-
-let reciboEmailData = null; // stores {email, nome, valor, desc, data, num}
-
-function gerarRecibo(lancId) {
-  const l = DB.lancs.find(x => x.id == lancId);
-  if (!l) return;
-  reciboLancId = lancId;
-  const c = DB.clientes.find(x => x.id == l.cId);
-  // Store for email sending
-  reciboEmailData = {
-    email: c ? (c.email||'') : '',
-    nome: c ? (c.resp||c.nome) : cNome(l.cId),
-    valor: l.valor,
-    desc: l.desc || 'Serviços prestados',
-    data: l.data,
-    nf: l.nf,
-    num: String(lancId).padStart(4,'0')
-  };
-  const c = DB.clientes.find(x => x.id == l.cId);
-  const nf = DB.notas.find(n => l.nf && n.num === l.nf.replace('NF ',''));
-  const dataFmt = fd(l.data);
-  const num = String(lancId).padStart(4,'0');
-
-  // QR code Pix via API gratuita
-  const pixPayload = PRESTADOR.pix.replace(/\D/g,'');
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(PRESTADOR.pix)}`;
-
-  const html = `
-  <div style="font-family:'Helvetica Neue',Arial,sans-serif;color:#1a1a2e;padding:2rem;background:#fff">
-    <!-- HEADER -->
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1.5rem;padding-bottom:1.5rem;border-bottom:2px solid #7c3aed">
-      <div>
-        <div style="font-size:22px;font-weight:700;color:#7c3aed;letter-spacing:-0.5px">${PRESTADOR.nome}</div>
-        <div style="font-size:12px;color:#666;margin-top:3px">CNPJ: ${PRESTADOR.cnpj}</div>
-        <div style="font-size:12px;color:#666">${PRESTADOR.email}</div>
-      </div>
-      <div style="text-align:right">
-        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#888">Recibo de Pagamento</div>
-        <div style="font-size:20px;font-weight:700;color:#7c3aed;margin-top:2px">#${num}</div>
-        <div style="font-size:12px;color:#666;margin-top:2px">${dataFmt}</div>
-      </div>
-    </div>
-
-    <!-- CLIENTE + VALOR -->
-    <div style="display:grid;grid-template-columns:1fr auto;gap:1.5rem;margin-bottom:1.5rem">
-      <div>
-        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#888;margin-bottom:6px">Recebido de</div>
-        <div style="font-size:16px;font-weight:600">${c ? c.nome : cNome(l.cId)}</div>
-        ${c && c.cnpj ? `<div style="font-size:12px;color:#666">CNPJ/CPF: ${c.cnpj}</div>` : ''}
-        ${c && c.email ? `<div style="font-size:12px;color:#666">${c.email}</div>` : ''}
-      </div>
-      <div style="text-align:right">
-        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#888;margin-bottom:6px">Valor recebido</div>
-        <div style="font-size:28px;font-weight:700;color:#059669">${fmt(l.valor)}</div>
-      </div>
-    </div>
-
-    <!-- DESCRIÇÃO -->
-    <div style="background:#f8f7ff;border-radius:8px;padding:1rem;margin-bottom:1.5rem;border-left:3px solid #7c3aed">
-      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#888;margin-bottom:6px">Descrição do serviço</div>
-      <div style="font-size:14px;color:#1a1a2e">${l.desc || 'Serviços de design gráfico'}</div>
-      ${l.nf ? `<div style="font-size:12px;color:#7c3aed;margin-top:4px;font-weight:500">Nota Fiscal: ${l.nf}</div>` : ''}
-    </div>
-
-    <!-- LINHA DE ITENS -->
-    <table style="width:100%;border-collapse:collapse;margin-bottom:1.5rem;font-size:13px">
-      <thead>
-        <tr style="background:#f3f0ff">
-          <th style="text-align:left;padding:8px 12px;font-weight:600;color:#7c3aed;border-radius:6px 0 0 6px">Serviço</th>
-          <th style="text-align:center;padding:8px 12px;font-weight:600;color:#7c3aed">Qtd</th>
-          <th style="text-align:right;padding:8px 12px;font-weight:600;color:#7c3aed;border-radius:0 6px 6px 0">Valor</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td style="padding:10px 12px;border-bottom:1px solid #eee">${l.desc || 'Serviços prestados'}</td>
-          <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:center">1</td>
-          <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;font-weight:600">${fmt(l.valor)}</td>
-        </tr>
-        <tr>
-          <td colspan="2" style="padding:10px 12px;text-align:right;font-weight:700;font-size:15px">Total</td>
-          <td style="padding:10px 12px;text-align:right;font-weight:700;font-size:15px;color:#059669">${fmt(l.valor)}</td>
-        </tr>
-      </tbody>
-    </table>
-
-    <!-- PIX + QR -->
-    <div style="display:flex;justify-content:space-between;align-items:center;background:#f0fdf4;border-radius:8px;padding:1rem;margin-bottom:1.5rem;border:1px solid #bbf7d0">
-      <div>
-        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#16a34a;margin-bottom:4px">Pix — pagamento recebido via</div>
-        <div style="font-size:14px;font-weight:600;color:#15803d">${PRESTADOR.pix}</div>
-        <div style="font-size:12px;color:#16a34a">Chave ${PRESTADOR.pixTipo}</div>
-      </div>
-      <img src="${qrUrl}" width="80" height="80" style="border-radius:6px;border:1px solid #bbf7d0" alt="QR Pix">
-    </div>
-
-    <!-- RODAPÉ -->
-    <div style="text-align:center;padding-top:1rem;border-top:1px solid #eee">
-      <div style="font-size:11px;color:#999">Declaro que recebi a importância de <strong style="color:#1a1a2e">${fmt(l.valor)}</strong> referente aos serviços acima descritos.</div>
-      <div style="margin-top:2rem;border-top:1px dashed #ccc;padding-top:.75rem;display:inline-block;min-width:240px">
-        <div style="font-size:12px;color:#444;font-weight:500">${PRESTADOR.nome}</div>
-        <div style="font-size:11px;color:#999">CNPJ: ${PRESTADOR.cnpj}</div>
-      </div>
-      <div style="font-size:10px;color:#bbb;margin-top:.75rem">Gerado por MEI Flow · ${new Date().toLocaleDateString('pt-BR')}</div>
-    </div>
-  </div>`;
-
-  document.getElementById('recibo-preview').innerHTML = html;
-  document.getElementById('modal-recibo').style.display = 'flex';
-}
-
-function imprimirRecibo() {
-  const conteudo = document.getElementById('recibo-preview').innerHTML;
-  const win = window.open('','_blank');
-  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Recibo — MEI Flow</title>
-  <style>body{margin:0;font-family:'Helvetica Neue',Arial,sans-serif;}@media print{body{margin:0;}}</style>
-  </head><body>${conteudo}<script>window.onload=()=>{window.print();}<\/script></body></html>`);
-  win.document.close();
-}
-
-// =========================================
-// EXTRATO DO CLIENTE
-// =========================================
-let extratoClienteId = null;
-
-function verExtrato(cId) {
-  const c = DB.clientes.find(x => x.id == cId);
-  if (!c) return;
-  extratoClienteId = cId;
-  document.getElementById('extrato-title').textContent = 'Extrato — ' + c.nome;
-
-  const notas = DB.notas.filter(n => n.cId == cId).sort((a,b) => b.emissao?.localeCompare(a.emissao));
-  const lancs = DB.lancs.filter(l => l.cId == cId).sort((a,b) => b.data?.localeCompare(a.data));
-  const totalPago = lancs.reduce((s,l) => s + Number(l.valor), 0);
-  const totalPendente = notas.filter(n => n.status !== 'paga').reduce((s,n) => s + Number(n.valor), 0);
-
-  const statusColor = {paga:'#059669',enviada:'#3b82f6',emitida:'#7c3aed',atrasada:'#ef4444'};
-  const statusLabel = {paga:'Paga',enviada:'Enviada',emitida:'Emitida',atrasada:'Atrasada'};
-
-  const html = `
-  <div style="padding:.25rem 0">
-    <!-- HEADER CLIENTE -->
-    <div style="background:rgba(124,58,237,.08);border:1px solid rgba(124,58,237,.2);border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.25rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem">
-      <div>
-        <div style="font-size:16px;font-weight:600;color:var(--text)">${c.nome}</div>
-        <div style="font-size:12px;color:var(--text-muted)">${c.cnpj ? 'CNPJ/CPF: ' + c.cnpj + ' · ' : ''}${c.email || ''}</div>
-      </div>
-      <div style="text-align:right">
-        <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">Serviço</div>
-        <div style="font-size:13px;font-weight:500;color:var(--purple-ultra)">${c.servico || '—'}</div>
-      </div>
-    </div>
-
-    <!-- MÉTRICAS -->
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;margin-bottom:1.25rem">
-      <div style="background:var(--dark3);border-radius:10px;padding:.875rem">
-        <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Total pago</div>
-        <div style="font-size:20px;font-weight:700;color:#34d399;font-family:var(--mono)">${fmt(totalPago)}</div>
-      </div>
-      <div style="background:var(--dark3);border-radius:10px;padding:.875rem">
-        <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Pendente</div>
-        <div style="font-size:20px;font-weight:700;color:${totalPendente > 0 ? '#fbbf24' : '#34d399'};font-family:var(--mono)">${fmt(totalPendente)}</div>
-      </div>
-      <div style="background:var(--dark3);border-radius:10px;padding:.875rem">
-        <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">NFs emitidas</div>
-        <div style="font-size:20px;font-weight:700;color:var(--purple-ultra);font-family:var(--mono)">${notas.length}</div>
-      </div>
-    </div>
-
-    <!-- NOTAS FISCAIS -->
-    <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem;display:flex;align-items:center;gap:8px">
-      <span>Notas fiscais</span><div style="flex:1;height:1px;background:var(--border)"></div>
-    </div>
-    ${notas.length ? notas.map(n => `
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:.75rem 1rem;background:var(--dark3);border-radius:8px;margin-bottom:.5rem;gap:.5rem;flex-wrap:wrap">
-        <div style="display:flex;align-items:center;gap:.75rem">
-          <span style="font-family:var(--mono);font-size:13px;color:var(--purple-ultra);font-weight:500">NF ${n.num}</span>
-          <span style="font-size:13px;color:var(--text-muted)">${n.desc || '—'}</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:.75rem">
-          <span style="font-family:var(--mono);font-size:14px;font-weight:600;color:var(--text)">${fmt(n.valor)}</span>
-          <span style="font-size:11px;padding:3px 8px;border-radius:20px;font-weight:600;background:${statusColor[n.status]}22;color:${statusColor[n.status]}">${statusLabel[n.status]||n.status}</span>
-          <span style="font-size:12px;color:var(--text-dim)">${fd(n.emissao)}</span>
-        </div>
-      </div>`).join('') : '<div style="color:var(--text-muted);font-size:13px;padding:.5rem 0">Nenhuma nota fiscal emitida ainda.</div>'}
-
-    <!-- PAGAMENTOS -->
-    <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin:.875rem 0 .75rem;display:flex;align-items:center;gap:8px">
-      <span>Pagamentos recebidos</span><div style="flex:1;height:1px;background:var(--border)"></div>
-    </div>
-    ${lancs.length ? lancs.map(l => `
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:.75rem 1rem;background:var(--dark3);border-radius:8px;margin-bottom:.5rem;gap:.5rem">
-        <div>
-          <div style="font-size:13px;font-weight:500;color:var(--text)">${l.desc || 'Pagamento recebido'}</div>
-          <div style="font-size:12px;color:var(--text-muted)">${fd(l.data)}${l.nf ? ' · ' + l.nf : ''}</div>
-        </div>
-        <div style="font-family:var(--mono);font-size:15px;font-weight:700;color:#34d399">${fmt(l.valor)}</div>
-      </div>`).join('') : '<div style="color:var(--text-muted);font-size:13px;padding:.5rem 0">Nenhum pagamento registrado ainda.</div>'}
-  </div>`;
-
-  document.getElementById('extrato-content').innerHTML = html;
-  document.getElementById('modal-extrato').style.display = 'flex';
-}
-
-function copiarLinkExtrato() {
-  const link = getLinkExtrato(extratoClienteId);
-  navigator.clipboard.writeText(link).then(() => toast('✓ Link copiado!'));
-}
-
-function compartilharExtrato() {
-  enviarLinkWhats(extratoClienteId);
-}
-
-
-// =========================================
-// EMISSÃO NF — GOV.BR
-// =========================================
-let emissaoClienteId = null;
-
-function abrirEmissaoNF(cId) {
-  // Fill client selector
-  const sel = document.getElementById('em-cliente');
-  sel.innerHTML = '<option value="">Selecione o cliente...</option>' +
-    DB.clientes.filter(c => c.status === 'ativo' && c.emiteNF !== false)
-      .map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
-
-  // Set competencia to current month
-  const now = new Date();
-  document.getElementById('em-competencia').value =
-    `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-
-  // Clear fields
-  document.getElementById('em-valor').value = '';
-  document.getElementById('em-desc').value = '';
-  document.getElementById('em-num-nf').value = '';
-  document.getElementById('em-tomador-wrap').style.display = 'none';
-
-  // Pre-select client if provided
-  if (cId) {
-    sel.value = cId;
-    preencherDadosEmissao(cId);
-  }
-
-  document.getElementById('modal-emissao-nf').style.display = 'flex';
-}
-
-function preencherDadosEmissao(cId) {
-  emissaoClienteId = cId;
-  const c = DB.clientes.find(x => x.id == cId);
-  if (!c) { document.getElementById('em-tomador-wrap').style.display = 'none'; return; }
-
-  // Auto-fill valor and desc
-  if (c.valor) document.getElementById('em-valor').value = c.valor;
-  if (c.servico) document.getElementById('em-desc').value = c.servico;
-
-  // Show tomador info
-  document.getElementById('em-tomador-wrap').style.display = 'block';
-  document.getElementById('em-tomador-info').innerHTML = `
-    <div style="display:flex;gap:1rem;flex-wrap:wrap">
-      <div><div style="font-size:11px;color:var(--text-muted)">Nome</div><div style="font-weight:500">${c.nome}</div></div>
-      ${c.cnpj ? `<div><div style="font-size:11px;color:var(--text-muted)">CNPJ/CPF</div><div style="font-weight:500">${c.cnpj}</div></div>` : ''}
-      ${c.email ? `<div><div style="font-size:11px;color:var(--text-muted)">E-mail</div><div style="font-weight:500">${c.email}</div></div>` : ''}
-    </div>`;
-}
-
-function abrirGovBr() {
-  // Open immediately on click — must be first to avoid popup blocker
-  const win = window.open('https://www.nfse.gov.br/EmissorNacional/DPS/Pessoas', '_blank');
-  if (!win) { toast('⚠ Permita popups para este site nas configurações do navegador', 'warn'); return; }
-
-  const cId = document.getElementById('em-cliente').value;
-  const valor = document.getElementById('em-valor').value;
-  const desc = document.getElementById('em-desc').value;
-
-  if (!cId || !valor || !desc) {
-    toast('⚠ Preencha cliente, valor e descrição para ver o resumo', 'warn');
-    return;
-  }
-
-  const c = DB.clientes.find(x => x.id == cId);
-  const competencia = document.getElementById('em-competencia').value;
-
-  const c2 = DB.clientes.find(x => x.id == cId);
-  const compFormatado = competencia ? competencia.split('-').reverse().join('/') : '—';
-
-  // Build copy-friendly summary
-  function copyRow(label, value, fieldId) {
-    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:.5rem 0;border-bottom:1px solid rgba(124,58,237,.1)">
-      <div>
-        <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">${label}</div>
-        <div style="font-weight:500;margin-top:1px">${value}</div>
-      </div>
-      <button onclick="copiarTexto('${value.replace(/'/g,"\'")}')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--purple-ultra);cursor:pointer;font-size:11px;padding:3px 8px;flex-shrink:0;margin-left:8px">📋 Copiar</button>
-    </div>`;
-  }
-
-  const infoHtml =
-    copyRow('Pág. 1 — Data de competência', compFormatado) +
-    (c2 && c2.nome ? copyRow('Pág. 2 — Tomador (razão social)', c2.nome) : '') +
-    (c2 && c2.cnpj ? copyRow('Pág. 2 — CNPJ/CPF do tomador', c2.cnpj) : '') +
-    copyRow('Pág. 2 — Cód. tributação nacional', '17.02.04') +
-    copyRow('Pág. 2 — Descrição do serviço', desc) +
-    copyRow('Pág. 3 — Valor do serviço', 'R$ ' + parseFloat(valor).toLocaleString('pt-BR',{minimumFractionDigits:2}));
-
-  document.getElementById('em-tomador-wrap').style.display = 'block';
-  document.getElementById('em-tomador-info').innerHTML = infoHtml;
-  toast('🏛 gov.br aberto! Use o resumo abaixo para copiar os dados.');
-}
-
-async function registrarNFAposEmissao() {
-  const cId = parseInt(document.getElementById('em-cliente').value);
-  const num = document.getElementById('em-num-nf').value.trim();
-  const valor = parseFloat(document.getElementById('em-valor').value);
-  const desc = document.getElementById('em-desc').value;
-  const status = document.getElementById('em-status-nf').value;
-  const competencia = document.getElementById('em-competencia').value;
-
-  if (!num || !cId || !valor) {
-    toast('⚠ Preencha o número da NF emitida', 'warn');
-    return;
-  }
-
-  // Build emissao date from competencia
-  const emissao = competencia ? competencia + '-01' : new Date().toISOString().split('T')[0];
-  const vencDate = new Date(emissao);
-  vencDate.setDate(vencDate.getDate() + 30);
-  const venc = vencDate.toISOString().split('T')[0];
-
-  const row = {
-    numero: num, cliente_id: cId, descricao: desc, valor,
-    data_emissao: emissao, data_vencimento: venc,
-    status, anexo_url: null, anexo_nome: null, anexo_tipo: null
-  };
-
-  if (sb && !SUPA_URL.includes('COLE')) {
-    const { data, error } = await sb.from('notas').insert(row).select().single();
-    if (error) { toast('⚠ Erro: ' + error.message, 'err'); return; }
-    DB.notas.push({id:data.id,num:data.numero,cId:data.cliente_id,desc:data.descricao,valor:data.valor,emissao:data.data_emissao,venc:data.data_vencimento,status:data.status,anexo:null,anexoNome:null,anexoTipo:null});
-  } else {
-    const id = DB.notas.length ? Math.max(...DB.notas.map(n=>n.id))+1 : 1;
-    DB.notas.push({id,num,cId,desc,valor,emissao,venc,status,anexo:null,anexoNome:null,anexoTipo:null});
-    save(null,null);
-  }
-
-  closeModal('modal-emissao-nf');
-  renderNF(); renderDash(); renderAlertas(); updateBadge();
-  toast('✓ Nota NF ' + num + ' registrada no MEI Flow!');
-}
-
-
-// Copiar texto para clipboard
-function copiarTexto(txt) {
-  navigator.clipboard.writeText(txt).then(() => toast('📋 Copiado!')).catch(() => {
-    const el = document.createElement('textarea');
-    el.value = txt; document.body.appendChild(el);
-    el.select(); document.execCommand('copy');
-    document.body.removeChild(el); toast('📋 Copiado!');
-  });
-}
-
-
-// =========================================
-// PEDIDOS (avulsos sem NF)
-// =========================================
-let pedFiltText = '', pedFiltStatus = '';
-
-function filterPedidos(v) { pedFiltText = v.toLowerCase(); renderPedidos(); }
-function filterPedidoStatus(v) { pedFiltStatus = v; renderPedidos(); }
-
-function renderPedidos() {
-  const f = DB.pedidos.filter(p =>
-    (cNome(p.cId).toLowerCase().includes(pedFiltText) || (p.desc||'').toLowerCase().includes(pedFiltText)) &&
-    (!pedFiltStatus || p.status === pedFiltStatus)
-  );
-
-  const totPago = f.filter(p=>p.status==='pago').reduce((s,p)=>s+Number(p.valor),0);
-  const totPend = f.filter(p=>p.status==='pendente').reduce((s,p)=>s+Number(p.valor),0);
-  const pedBadge = document.getElementById('pedidos-badge');
-  const nPend = DB.pedidos.filter(p=>p.status==='pendente').length;
-  if(pedBadge){pedBadge.textContent=nPend;pedBadge.style.display=nPend?'':'none';}
-
-  document.getElementById('pedidos-metrics').innerHTML = `
-    <div class="metric-card"><div class="metric-label">Recebido (filtro)</div><div class="metric-value" style="color:var(--success);font-size:22px">${fmt(totPago)}</div><div class="metric-sub">${f.filter(p=>p.status==='pago').length} pago(s)</div></div>
-    <div class="metric-card"><div class="metric-label">Pendente (filtro)</div><div class="metric-value" style="color:var(--warning);font-size:22px">${fmt(totPend)}</div><div class="metric-sub">${f.filter(p=>p.status==='pendente').length} pendente(s)</div></div>
-  `;
-
-  const statusMap = {
-    pago:      ['success','✅ Pago'],
-    pendente:  ['warning','⏳ Pendente'],
-    cancelado: ['danger', '❌ Cancelado'],
-  };
-
-  document.getElementById('pedidos-table').innerHTML = f.length ? f.map(p => {
-    const [cls, lbl] = statusMap[p.status] || ['info', p.status];
-    return `<tr>
-      <td style="font-weight:500">${cNome(p.cId)}</td>
-      <td style="font-size:13px;color:var(--text-muted)">${p.desc||'—'}</td>
-      <td class="td-mono" style="color:var(--success)">${fmt(p.valor)}</td>
-      <td>${fd(p.data)}</td>
-      <td>
-        <select onchange="updPedidoStatus(${p.id},this.value)" style="margin:0;padding:4px 8px;font-size:12px;width:auto">
-          ${['pendente','pago','cancelado'].map(s=>`<option value="${s}" ${p.status===s?'selected':''}>${s.charAt(0).toUpperCase()+s.slice(1)}</option>`).join('')}
-        </select>
-      </td>
-      <td style="display:flex;gap:6px;align-items:center">
-        ${p.status==='pago'?`
-          <button class="btn btn-ghost btn-sm" onclick="gerarReciboPedido(${p.id})" style="font-size:12px">🧾 Recibo</button>
-          <button class="btn btn-ghost btn-sm" onclick="enviarEmailPedido(${p.id})" style="font-size:12px">📧 E-mail</button>
-        `:''}
-        <button class="btn btn-ghost btn-sm" onclick="editarPedido(${p.id})" style="font-size:12px">✏</button>
-        <button class="btn-icon" onclick="delPedido(${p.id})">✕</button>
-      </td>
-    </tr>`;
-  }).join('') : `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">🛒</div><div class="empty-title">Nenhum pedido</div><div class="empty-desc">Adicione serviços avulsos aqui</div></div></td></tr>`;
-}
-
-async function salvarPedido() {
-  const editId = document.getElementById('ped-id').value;
-  const cId = parseInt(document.getElementById('ped-cli').value);
-  const valor = parseFloat(document.getElementById('ped-valor').value);
-  const desc = document.getElementById('ped-desc').value.trim();
-  const data = document.getElementById('ped-data').value;
-  const status = document.getElementById('ped-status').value;
-  if (!cId || !valor || !desc) { toast('⚠ Preencha os campos obrigatórios','warn'); return; }
-
-  const row = { cliente_id:cId, valor, descricao:desc, data, status };
-
-  if (editId) {
-    if (sb&&!SUPA_URL.includes('COLE')) await sb.from('pedidos').update(row).eq('id',editId);
-    const idx = DB.pedidos.findIndex(p=>p.id==editId);
-    if(idx>-1) DB.pedidos[idx] = {...DB.pedidos[idx], cId, valor, desc, data, status};
-    toast('✓ Pedido atualizado!');
-  } else {
-    if (sb&&!SUPA_URL.includes('COLE')) {
-      const {data:d,error} = await sb.from('pedidos').insert(row).select().single();
-      if(error){toast('⚠ Erro: '+error.message,'err');return;}
-      DB.pedidos.unshift({id:d.id,cId:d.cliente_id,desc:d.descricao,valor:d.valor,data:d.data,status:d.status});
-    } else {
-      const id = DB.pedidos.length?Math.max(...DB.pedidos.map(p=>p.id))+1:1;
-      DB.pedidos.unshift({id,cId,desc,valor,data,status});
-      save(null,null);
-    }
-    toast('✓ Pedido registrado!');
-  }
-  closeModal('modal-pedido');
-  renderPedidos(); renderDash();
-  ['ped-id','ped-valor','ped-desc','ped-data'].forEach(id=>document.getElementById(id).value='');
-}
-
-function editarPedido(id) {
-  const p = DB.pedidos.find(x=>x.id==id);
-  if(!p) return;
-  document.getElementById('ped-id').value = p.id;
-  document.getElementById('ped-valor').value = p.valor;
-  document.getElementById('ped-desc').value = p.desc||'';
-  document.getElementById('ped-data').value = p.data||'';
-  document.getElementById('ped-status').value = p.status||'pendente';
-  // fill select and set client
-  const sel = document.getElementById('ped-cli');
-  sel.innerHTML = DB.clientes.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('');
-  sel.value = p.cId;
-  document.getElementById('ped-modal-title').textContent = 'Editar pedido';
-  document.getElementById('ped-save-btn').textContent = 'Salvar alterações';
-  document.getElementById('modal-pedido').style.display = 'flex';
-}
-
-async function updPedidoStatus(id, status) {
-  const p = DB.pedidos.find(x=>x.id==id);
-  if(!p) return;
-  const prevStatus = p.status;
-  p.status = status;
-
-  // Update pedido status
-  if(sb&&!SUPA_URL.includes('COLE')) {
-    const {error:eUpd} = await sb.from('pedidos').update({status}).eq('id', id);
-    if(eUpd) { toast('⚠ Erro ao atualizar: '+eUpd.message,'err'); p.status=prevStatus; return; }
-  }
-
-  // Auto-create lancamento when marked as pago
-  if(status==='pago' && prevStatus!=='pago') {
-    const hoje = new Date().toISOString().split('T')[0];
-    const lancRow = {
-      cliente_id: p.cId,
-      descricao: p.desc || 'Pedido avulso',
-      valor: p.valor,
-      data: p.data || hoje,
-      nf_numero: null,
-      status_pgto: 'recebido'
-    };
-    if(sb&&!SUPA_URL.includes('COLE')) {
-      const {data:ld, error:eLanc} = await sb.from('lancamentos').insert(lancRow).select().single();
-      if(eLanc) {
-        toast('⚠ Erro ao criar lançamento: '+eLanc.message,'err');
-      } else {
-        DB.lancs.push({
-          id:ld.id, cId:ld.cliente_id, desc:ld.descricao,
-          valor:ld.valor, data:ld.data, nf:null,
-          status:'recebido', comprovante:null,
-          comprovanteNome:null, comprovanteTipo:null
-        });
-        toast('✓ Pago! Lançamento criado em Lançamentos 🎉');
-      }
-    } else {
-      const lid = DB.lancs.length ? Math.max(...DB.lancs.map(l=>l.id))+1 : 1;
-      DB.lancs.push({id:lid, cId:p.cId, desc:p.desc||'Pedido avulso',
-        valor:p.valor, data:p.data||hoje, nf:null,
-        status:'recebido', comprovante:null,
-        comprovanteNome:null, comprovanteTipo:null});
-      save(null,null);
-      toast('✓ Pago! Lançamento criado em Lançamentos 🎉');
-    }
-  } else {
-    if(!sb||SUPA_URL.includes('COLE')) save(null,null);
-    toast('✓ Status atualizado');
-  }
-
-  renderPedidos(); renderLanc(); renderDash();
-}
-
-async function delPedido(id) {
-  if(!confirm('Remover este pedido?')) return;
-  if(sb&&!SUPA_URL.includes('COLE')) await sb.from('pedidos').delete().eq('id',id);
-  DB.pedidos = DB.pedidos.filter(p=>p.id!==id);
-  save(null,null); renderPedidos(); renderDash(); toast('Pedido removido','warn');
-}
-
-function gerarReciboPedido(pedId) {
-  const p = DB.pedidos.find(x=>x.id==pedId);
-  if(!p || p.status!=='pago') { toast('⚠ Pedido precisa estar pago para gerar recibo','warn'); return; }
-  // Reuse existing gerarRecibo logic by building a fake lanc object
-  const fakeLanc = { id: pedId, cId: p.cId, valor: p.valor, data: p.data, desc: p.desc, nf: null };
-  // temporarily add to DB.lancs for the recibo function
-  const prev = DB.lancs;
-  DB.lancs = [...DB.lancs, fakeLanc];
-  gerarRecibo(pedId);
-  DB.lancs = prev;
-}
-
-
-// =========================================
-// GMAIL API — envio com PDF anexado
-// =========================================
-const GMAIL_CLIENT_ID = '125305798583-vc9la0hcjgvb55qhvpn8o1hclnlvq0ub.apps.googleusercontent.com';
-const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.send';
-let gmailToken = null;
-
-function buildEmailBody(data) {
-  return `Olá, ${data.nome}!
-
-Passando para confirmar que recebemos o seu pagamento com sucesso. Segue o recibo abaixo:
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  RECIBO DE PAGAMENTO #${data.num}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Prestador:  ${PRESTADOR.nome}
-CNPJ:       ${PRESTADOR.cnpj}
-
-Recebido de: ${data.nome}
-Serviço:     ${data.desc}${data.nf ? '\nNota Fiscal: ' + data.nf : ''}
-Valor:       R$ ${Number(data.valor).toLocaleString('pt-BR',{minimumFractionDigits:2})}
-Data:        ${data.data ? data.data.split('-').reverse().join('/') : new Date().toLocaleDateString('pt-BR')}
-
-Pix: ${PRESTADOR.pix} (${PRESTADOR.pixTipo})
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Obrigado pela confiança! Qualquer dúvida estou à disposição.
-
-Atenciosamente,
-${PRESTADOR.nome}`;
-}
-
-async function abrirGmail(email, assunto, corpo, pdfBase64 = null) {
-  // Try Gmail API first (with PDF), fallback to mailto
-  if (!gmailToken) {
-    await autenticarGmail();
-  }
-  if (gmailToken) {
-    await enviarViaAPI(email, assunto, corpo, pdfBase64);
-  } else {
-    // Fallback: open Gmail compose
-    const url = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}&su=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`;
-    window.open(url, '_blank');
-    toast('📧 Gmail aberto — faça login para envio automático.');
-  }
-}
-
-function autenticarGmail() {
-  return new Promise((resolve) => {
-    const client = google.accounts.oauth2.initTokenClient({
-      client_id: GMAIL_CLIENT_ID,
-      scope: GMAIL_SCOPE,
-      callback: (resp) => {
-        if (resp.access_token) {
-          gmailToken = resp.access_token;
-          const btn = document.getElementById('gmail-connect-btn');
-          const txt = document.getElementById('gmail-status-txt');
-          if(btn) btn.style.borderColor = 'rgba(52,211,153,.4)';
-          if(txt) txt.textContent = '✓ Gmail conectado';
-          toast('✓ Gmail conectado! E-mails serão enviados automaticamente.');
-        }
-        resolve();
-      },
-    });
-    client.requestAccessToken();
-  });
-}
-
-async function enviarViaAPI(to, subject, bodyText, pdfBase64 = null) {
-  try {
-    // Build MIME message
-    const boundary = 'meiflow_boundary_' + Date.now();
-    let mime = '';
-
-    if (pdfBase64) {
-      // Multipart with PDF attachment
-      mime = [
-        `MIME-Version: 1.0`,
-        `To: ${to}`,
-        `Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`,
-        `Content-Type: multipart/mixed; boundary="${boundary}"`,
-        ``,
-        `--${boundary}`,
-        `Content-Type: text/plain; charset="UTF-8"`,
-        `Content-Transfer-Encoding: quoted-printable`,
-        ``,
-        bodyText,
-        ``,
-        `--${boundary}`,
-        `Content-Type: application/pdf; name="recibo.pdf"`,
-        `Content-Disposition: attachment; filename="recibo.pdf"`,
-        `Content-Transfer-Encoding: base64`,
-        ``,
-        pdfBase64,
-        `--${boundary}--`,
-      ].join('
-');
-    } else {
-      // Plain text only
-      mime = [
-        `MIME-Version: 1.0`,
-        `To: ${to}`,
-        `Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`,
-        `Content-Type: text/plain; charset="UTF-8"`,
-        ``,
-        bodyText,
-      ].join('
-');
-    }
-
-    // Encode to base64url
-    const encoded = btoa(unescape(encodeURIComponent(mime)))
-      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-
-    const resp = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + gmailToken,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ raw: encoded }),
-    });
-
-    if (resp.ok) {
-      toast('✅ E-mail enviado com sucesso' + (pdfBase64 ? ' (com PDF anexado)!' : '!'));
-    } else {
-      const err = await resp.json();
-      if (err.error?.code === 401) {
-        gmailToken = null;
-        toast('⚠ Sessão expirada — clique em e-mail novamente', 'warn');
-      } else {
-        throw new Error(err.error?.message);
-      }
-    }
-  } catch(e) {
-    console.error('Gmail API error:', e);
-    toast('⚠ Erro ao enviar: ' + e.message, 'err');
-  }
-}
-
-// Generate PDF base64 from recibo HTML using print
-async function gerarPDFBase64() {
-  return null; // PDF gerado client-side requer lib externa — usa texto por ora
-}
-
-async function enviarReciboEmail() {
-  if (!reciboEmailData) { toast('⚠ Nenhum recibo aberto','warn'); return; }
-  const d = reciboEmailData;
-  if (!d.email) {
-    const email = prompt('E-mail do cliente:', '');
-    if (!email) return;
-    d.email = email;
-  }
-  const assunto = `Recibo de pagamento #${d.num} — ${PRESTADOR.nome}`;
-  const corpo = buildEmailBody(d);
-
-  // Try to generate PDF from current recibo HTML
-  const reciboHtml = document.getElementById('recibo-preview')?.innerHTML;
-  let pdfB64 = null;
-  if (reciboHtml) {
-    try {
-      pdfB64 = await htmlParaPDFBase64(reciboHtml, d);
-    } catch(e) { console.warn('PDF gen failed, sending text only'); }
-  }
-
-  await abrirGmail(d.email, assunto, corpo, pdfB64);
-}
-
-async function htmlParaPDFBase64(html, d) {
-  // Use browser print to blob via iframe
-  return new Promise((resolve, reject) => {
-    try {
-      const iframe = document.createElement('iframe');
-      iframe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:794px;height:1123px;';
-      document.body.appendChild(iframe);
-      iframe.contentDocument.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
-        <style>body{margin:0;font-family:'Helvetica Neue',Arial,sans-serif;}@page{margin:0;size:A4;}</style>
-        </head><body>${html}</body></html>`);
-      iframe.contentDocument.close();
-      setTimeout(() => {
-        document.body.removeChild(iframe);
-        resolve(null); // Can't get blob without user gesture — send text only
-      }, 100);
-    } catch(e) { reject(e); }
-  });
-}
-
-function enviarEmailLanc(lancId) {
-  const l = DB.lancs.find(x => x.id == lancId);
-  if (!l) return;
-  const c = DB.clientes.find(x => x.id == l.cId);
-  const email = c ? (c.email||'') : '';
-  if (!email) {
-    const e = prompt('E-mail do cliente (não cadastrado):', '');
-    if (!e) return;
-  }
-  const data = {
-    email: email || prompt('E-mail do cliente:', '')||'',
-    nome: c ? (c.resp||c.nome) : cNome(l.cId),
-    valor: l.valor,
-    desc: l.desc || 'Serviços prestados',
-    data: l.data,
-    nf: l.nf,
-    num: String(l.id).padStart(4,'0')
-  };
-  if (!data.email) return;
-  const assunto = `Recibo de pagamento #${data.num} — ${PRESTADOR.nome}`;
-  abrirGmail(data.email, assunto, buildEmailBody(data));
-}
-
-function enviarEmailPedido(pedId) {
-  const p = DB.pedidos.find(x => x.id == pedId);
-  if (!p || p.status !== 'pago') return;
-  const c = DB.clientes.find(x => x.id == p.cId);
-  const email = c ? (c.email||'') : '';
-  const data = {
-    email: email || prompt('E-mail do cliente:', '')||'',
-    nome: c ? (c.resp||c.nome) : cNome(p.cId),
-    valor: p.valor,
-    desc: p.desc || 'Serviço avulso',
-    data: p.data,
-    nf: null,
-    num: String(p.id).padStart(4,'0')
-  };
-  if (!data.email) return;
-  const assunto = `Recibo de pagamento #${data.num} — ${PRESTADOR.nome}`;
-  abrirGmail(data.email, assunto, buildEmailBody(data));
-}
-
-</script>
 <style>
 :root {
   --black:#080810;--dark:#0e0e1a;--dark2:#13131f;--dark3:#1a1a2e;--dark4:#212138;
@@ -1483,6 +696,790 @@ tr:hover td{background:rgba(124,58,237,.04);}
 </div>
 
 <script>
+// =========================================
+// DADOS DO PRESTADOR — edite aqui
+// =========================================
+const PRESTADOR = {
+  nome: 'Lucas Teles',
+  cnpj: '66.888.248/0001-49',
+  pix: '(21) 96019-4636',
+  pixTipo: 'Telefone',
+  email: 'lucas.teles@outtax.com.br',
+};
+// =========================================
+
+// =========================================
+// RECIBO PDF
+// =========================================
+let reciboLancId = null;
+
+let reciboEmailData = null; // stores {email, nome, valor, desc, data, num}
+
+function gerarRecibo(lancId) {
+  const l = DB.lancs.find(x => x.id == lancId);
+  if (!l) return;
+  reciboLancId = lancId;
+  const c = DB.clientes.find(x => x.id == l.cId);
+  // Store for email sending
+  reciboEmailData = {
+    email: c ? (c.email||'') : '',
+    nome: c ? (c.resp||c.nome) : cNome(l.cId),
+    valor: l.valor,
+    desc: l.desc || 'Serviços prestados',
+    data: l.data,
+    nf: l.nf,
+    num: String(lancId).padStart(4,'0')
+  };
+  const c = DB.clientes.find(x => x.id == l.cId);
+  const nf = DB.notas.find(n => l.nf && n.num === l.nf.replace('NF ',''));
+  const dataFmt = fd(l.data);
+  const num = String(lancId).padStart(4,'0');
+
+  // QR code Pix via API gratuita
+  const pixPayload = PRESTADOR.pix.replace(/\D/g,'');
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(PRESTADOR.pix)}`;
+
+  const html = `
+  <div style="font-family:'Helvetica Neue',Arial,sans-serif;color:#1a1a2e;padding:2rem;background:#fff">
+    <!-- HEADER -->
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1.5rem;padding-bottom:1.5rem;border-bottom:2px solid #7c3aed">
+      <div>
+        <div style="font-size:22px;font-weight:700;color:#7c3aed;letter-spacing:-0.5px">${PRESTADOR.nome}</div>
+        <div style="font-size:12px;color:#666;margin-top:3px">CNPJ: ${PRESTADOR.cnpj}</div>
+        <div style="font-size:12px;color:#666">${PRESTADOR.email}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#888">Recibo de Pagamento</div>
+        <div style="font-size:20px;font-weight:700;color:#7c3aed;margin-top:2px">#${num}</div>
+        <div style="font-size:12px;color:#666;margin-top:2px">${dataFmt}</div>
+      </div>
+    </div>
+
+    <!-- CLIENTE + VALOR -->
+    <div style="display:grid;grid-template-columns:1fr auto;gap:1.5rem;margin-bottom:1.5rem">
+      <div>
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#888;margin-bottom:6px">Recebido de</div>
+        <div style="font-size:16px;font-weight:600">${c ? c.nome : cNome(l.cId)}</div>
+        ${c && c.cnpj ? `<div style="font-size:12px;color:#666">CNPJ/CPF: ${c.cnpj}</div>` : ''}
+        ${c && c.email ? `<div style="font-size:12px;color:#666">${c.email}</div>` : ''}
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#888;margin-bottom:6px">Valor recebido</div>
+        <div style="font-size:28px;font-weight:700;color:#059669">${fmt(l.valor)}</div>
+      </div>
+    </div>
+
+    <!-- DESCRIÇÃO -->
+    <div style="background:#f8f7ff;border-radius:8px;padding:1rem;margin-bottom:1.5rem;border-left:3px solid #7c3aed">
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#888;margin-bottom:6px">Descrição do serviço</div>
+      <div style="font-size:14px;color:#1a1a2e">${l.desc || 'Serviços de design gráfico'}</div>
+      ${l.nf ? `<div style="font-size:12px;color:#7c3aed;margin-top:4px;font-weight:500">Nota Fiscal: ${l.nf}</div>` : ''}
+    </div>
+
+    <!-- LINHA DE ITENS -->
+    <table style="width:100%;border-collapse:collapse;margin-bottom:1.5rem;font-size:13px">
+      <thead>
+        <tr style="background:#f3f0ff">
+          <th style="text-align:left;padding:8px 12px;font-weight:600;color:#7c3aed;border-radius:6px 0 0 6px">Serviço</th>
+          <th style="text-align:center;padding:8px 12px;font-weight:600;color:#7c3aed">Qtd</th>
+          <th style="text-align:right;padding:8px 12px;font-weight:600;color:#7c3aed;border-radius:0 6px 6px 0">Valor</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding:10px 12px;border-bottom:1px solid #eee">${l.desc || 'Serviços prestados'}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:center">1</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;font-weight:600">${fmt(l.valor)}</td>
+        </tr>
+        <tr>
+          <td colspan="2" style="padding:10px 12px;text-align:right;font-weight:700;font-size:15px">Total</td>
+          <td style="padding:10px 12px;text-align:right;font-weight:700;font-size:15px;color:#059669">${fmt(l.valor)}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- PIX + QR -->
+    <div style="display:flex;justify-content:space-between;align-items:center;background:#f0fdf4;border-radius:8px;padding:1rem;margin-bottom:1.5rem;border:1px solid #bbf7d0">
+      <div>
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#16a34a;margin-bottom:4px">Pix — pagamento recebido via</div>
+        <div style="font-size:14px;font-weight:600;color:#15803d">${PRESTADOR.pix}</div>
+        <div style="font-size:12px;color:#16a34a">Chave ${PRESTADOR.pixTipo}</div>
+      </div>
+      <img src="${qrUrl}" width="80" height="80" style="border-radius:6px;border:1px solid #bbf7d0" alt="QR Pix">
+    </div>
+
+    <!-- RODAPÉ -->
+    <div style="text-align:center;padding-top:1rem;border-top:1px solid #eee">
+      <div style="font-size:11px;color:#999">Declaro que recebi a importância de <strong style="color:#1a1a2e">${fmt(l.valor)}</strong> referente aos serviços acima descritos.</div>
+      <div style="margin-top:2rem;border-top:1px dashed #ccc;padding-top:.75rem;display:inline-block;min-width:240px">
+        <div style="font-size:12px;color:#444;font-weight:500">${PRESTADOR.nome}</div>
+        <div style="font-size:11px;color:#999">CNPJ: ${PRESTADOR.cnpj}</div>
+      </div>
+      <div style="font-size:10px;color:#bbb;margin-top:.75rem">Gerado por MEI Flow · ${new Date().toLocaleDateString('pt-BR')}</div>
+    </div>
+  </div>`;
+
+  document.getElementById('recibo-preview').innerHTML = html;
+  document.getElementById('modal-recibo').style.display = 'flex';
+}
+
+function imprimirRecibo() {
+  const conteudo = document.getElementById('recibo-preview').innerHTML;
+  const win = window.open('','_blank');
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Recibo — MEI Flow</title>
+  <style>body{margin:0;font-family:'Helvetica Neue',Arial,sans-serif;}@media print{body{margin:0;}}</style>
+  </head><body>${conteudo}<script>window.onload=()=>{window.print();}<\/script></body></html>`);
+  win.document.close();
+}
+
+// =========================================
+// EXTRATO DO CLIENTE
+// =========================================
+let extratoClienteId = null;
+
+function verExtrato(cId) {
+  const c = DB.clientes.find(x => x.id == cId);
+  if (!c) return;
+  extratoClienteId = cId;
+  document.getElementById('extrato-title').textContent = 'Extrato — ' + c.nome;
+
+  const notas = DB.notas.filter(n => n.cId == cId).sort((a,b) => b.emissao?.localeCompare(a.emissao));
+  const lancs = DB.lancs.filter(l => l.cId == cId).sort((a,b) => b.data?.localeCompare(a.data));
+  const totalPago = lancs.reduce((s,l) => s + Number(l.valor), 0);
+  const totalPendente = notas.filter(n => n.status !== 'paga').reduce((s,n) => s + Number(n.valor), 0);
+
+  const statusColor = {paga:'#059669',enviada:'#3b82f6',emitida:'#7c3aed',atrasada:'#ef4444'};
+  const statusLabel = {paga:'Paga',enviada:'Enviada',emitida:'Emitida',atrasada:'Atrasada'};
+
+  const html = `
+  <div style="padding:.25rem 0">
+    <!-- HEADER CLIENTE -->
+    <div style="background:rgba(124,58,237,.08);border:1px solid rgba(124,58,237,.2);border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.25rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem">
+      <div>
+        <div style="font-size:16px;font-weight:600;color:var(--text)">${c.nome}</div>
+        <div style="font-size:12px;color:var(--text-muted)">${c.cnpj ? 'CNPJ/CPF: ' + c.cnpj + ' · ' : ''}${c.email || ''}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">Serviço</div>
+        <div style="font-size:13px;font-weight:500;color:var(--purple-ultra)">${c.servico || '—'}</div>
+      </div>
+    </div>
+
+    <!-- MÉTRICAS -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;margin-bottom:1.25rem">
+      <div style="background:var(--dark3);border-radius:10px;padding:.875rem">
+        <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Total pago</div>
+        <div style="font-size:20px;font-weight:700;color:#34d399;font-family:var(--mono)">${fmt(totalPago)}</div>
+      </div>
+      <div style="background:var(--dark3);border-radius:10px;padding:.875rem">
+        <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Pendente</div>
+        <div style="font-size:20px;font-weight:700;color:${totalPendente > 0 ? '#fbbf24' : '#34d399'};font-family:var(--mono)">${fmt(totalPendente)}</div>
+      </div>
+      <div style="background:var(--dark3);border-radius:10px;padding:.875rem">
+        <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">NFs emitidas</div>
+        <div style="font-size:20px;font-weight:700;color:var(--purple-ultra);font-family:var(--mono)">${notas.length}</div>
+      </div>
+    </div>
+
+    <!-- NOTAS FISCAIS -->
+    <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem;display:flex;align-items:center;gap:8px">
+      <span>Notas fiscais</span><div style="flex:1;height:1px;background:var(--border)"></div>
+    </div>
+    ${notas.length ? notas.map(n => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:.75rem 1rem;background:var(--dark3);border-radius:8px;margin-bottom:.5rem;gap:.5rem;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:.75rem">
+          <span style="font-family:var(--mono);font-size:13px;color:var(--purple-ultra);font-weight:500">NF ${n.num}</span>
+          <span style="font-size:13px;color:var(--text-muted)">${n.desc || '—'}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:.75rem">
+          <span style="font-family:var(--mono);font-size:14px;font-weight:600;color:var(--text)">${fmt(n.valor)}</span>
+          <span style="font-size:11px;padding:3px 8px;border-radius:20px;font-weight:600;background:${statusColor[n.status]}22;color:${statusColor[n.status]}">${statusLabel[n.status]||n.status}</span>
+          <span style="font-size:12px;color:var(--text-dim)">${fd(n.emissao)}</span>
+        </div>
+      </div>`).join('') : '<div style="color:var(--text-muted);font-size:13px;padding:.5rem 0">Nenhuma nota fiscal emitida ainda.</div>'}
+
+    <!-- PAGAMENTOS -->
+    <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin:.875rem 0 .75rem;display:flex;align-items:center;gap:8px">
+      <span>Pagamentos recebidos</span><div style="flex:1;height:1px;background:var(--border)"></div>
+    </div>
+    ${lancs.length ? lancs.map(l => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:.75rem 1rem;background:var(--dark3);border-radius:8px;margin-bottom:.5rem;gap:.5rem">
+        <div>
+          <div style="font-size:13px;font-weight:500;color:var(--text)">${l.desc || 'Pagamento recebido'}</div>
+          <div style="font-size:12px;color:var(--text-muted)">${fd(l.data)}${l.nf ? ' · ' + l.nf : ''}</div>
+        </div>
+        <div style="font-family:var(--mono);font-size:15px;font-weight:700;color:#34d399">${fmt(l.valor)}</div>
+      </div>`).join('') : '<div style="color:var(--text-muted);font-size:13px;padding:.5rem 0">Nenhum pagamento registrado ainda.</div>'}
+  </div>`;
+
+  document.getElementById('extrato-content').innerHTML = html;
+  document.getElementById('modal-extrato').style.display = 'flex';
+}
+
+function copiarLinkExtrato() {
+  const link = getLinkExtrato(extratoClienteId);
+  navigator.clipboard.writeText(link).then(() => toast('✓ Link copiado!'));
+}
+
+function compartilharExtrato() {
+  enviarLinkWhats(extratoClienteId);
+}
+
+
+// =========================================
+// EMISSÃO NF — GOV.BR
+// =========================================
+let emissaoClienteId = null;
+
+function abrirEmissaoNF(cId) {
+  // Fill client selector
+  const sel = document.getElementById('em-cliente');
+  sel.innerHTML = '<option value="">Selecione o cliente...</option>' +
+    DB.clientes.filter(c => c.status === 'ativo' && c.emiteNF !== false)
+      .map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+
+  // Set competencia to current month
+  const now = new Date();
+  document.getElementById('em-competencia').value =
+    `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+
+  // Clear fields
+  document.getElementById('em-valor').value = '';
+  document.getElementById('em-desc').value = '';
+  document.getElementById('em-num-nf').value = '';
+  document.getElementById('em-tomador-wrap').style.display = 'none';
+
+  // Pre-select client if provided
+  if (cId) {
+    sel.value = cId;
+    preencherDadosEmissao(cId);
+  }
+
+  document.getElementById('modal-emissao-nf').style.display = 'flex';
+}
+
+function preencherDadosEmissao(cId) {
+  emissaoClienteId = cId;
+  const c = DB.clientes.find(x => x.id == cId);
+  if (!c) { document.getElementById('em-tomador-wrap').style.display = 'none'; return; }
+
+  // Auto-fill valor and desc
+  if (c.valor) document.getElementById('em-valor').value = c.valor;
+  if (c.servico) document.getElementById('em-desc').value = c.servico;
+
+  // Show tomador info
+  document.getElementById('em-tomador-wrap').style.display = 'block';
+  document.getElementById('em-tomador-info').innerHTML = `
+    <div style="display:flex;gap:1rem;flex-wrap:wrap">
+      <div><div style="font-size:11px;color:var(--text-muted)">Nome</div><div style="font-weight:500">${c.nome}</div></div>
+      ${c.cnpj ? `<div><div style="font-size:11px;color:var(--text-muted)">CNPJ/CPF</div><div style="font-weight:500">${c.cnpj}</div></div>` : ''}
+      ${c.email ? `<div><div style="font-size:11px;color:var(--text-muted)">E-mail</div><div style="font-weight:500">${c.email}</div></div>` : ''}
+    </div>`;
+}
+
+function abrirGovBr() {
+  // Open immediately on click — must be first to avoid popup blocker
+  const win = window.open('https://www.nfse.gov.br/EmissorNacional/DPS/Pessoas', '_blank');
+  if (!win) { toast('⚠ Permita popups para este site nas configurações do navegador', 'warn'); return; }
+
+  const cId = document.getElementById('em-cliente').value;
+  const valor = document.getElementById('em-valor').value;
+  const desc = document.getElementById('em-desc').value;
+
+  if (!cId || !valor || !desc) {
+    toast('⚠ Preencha cliente, valor e descrição para ver o resumo', 'warn');
+    return;
+  }
+
+  const c = DB.clientes.find(x => x.id == cId);
+  const competencia = document.getElementById('em-competencia').value;
+
+  const c2 = DB.clientes.find(x => x.id == cId);
+  const compFormatado = competencia ? competencia.split('-').reverse().join('/') : '—';
+
+  // Build copy-friendly summary
+  function copyRow(label, value, fieldId) {
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:.5rem 0;border-bottom:1px solid rgba(124,58,237,.1)">
+      <div>
+        <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">${label}</div>
+        <div style="font-weight:500;margin-top:1px">${value}</div>
+      </div>
+      <button onclick="copiarTexto('${value.replace(/'/g,"\'")}')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--purple-ultra);cursor:pointer;font-size:11px;padding:3px 8px;flex-shrink:0;margin-left:8px">📋 Copiar</button>
+    </div>`;
+  }
+
+  const infoHtml =
+    copyRow('Pág. 1 — Data de competência', compFormatado) +
+    (c2 && c2.nome ? copyRow('Pág. 2 — Tomador (razão social)', c2.nome) : '') +
+    (c2 && c2.cnpj ? copyRow('Pág. 2 — CNPJ/CPF do tomador', c2.cnpj) : '') +
+    copyRow('Pág. 2 — Cód. tributação nacional', '17.02.04') +
+    copyRow('Pág. 2 — Descrição do serviço', desc) +
+    copyRow('Pág. 3 — Valor do serviço', 'R$ ' + parseFloat(valor).toLocaleString('pt-BR',{minimumFractionDigits:2}));
+
+  document.getElementById('em-tomador-wrap').style.display = 'block';
+  document.getElementById('em-tomador-info').innerHTML = infoHtml;
+  toast('🏛 gov.br aberto! Use o resumo abaixo para copiar os dados.');
+}
+
+async function registrarNFAposEmissao() {
+  const cId = parseInt(document.getElementById('em-cliente').value);
+  const num = document.getElementById('em-num-nf').value.trim();
+  const valor = parseFloat(document.getElementById('em-valor').value);
+  const desc = document.getElementById('em-desc').value;
+  const status = document.getElementById('em-status-nf').value;
+  const competencia = document.getElementById('em-competencia').value;
+
+  if (!num || !cId || !valor) {
+    toast('⚠ Preencha o número da NF emitida', 'warn');
+    return;
+  }
+
+  // Build emissao date from competencia
+  const emissao = competencia ? competencia + '-01' : new Date().toISOString().split('T')[0];
+  const vencDate = new Date(emissao);
+  vencDate.setDate(vencDate.getDate() + 30);
+  const venc = vencDate.toISOString().split('T')[0];
+
+  const row = {
+    numero: num, cliente_id: cId, descricao: desc, valor,
+    data_emissao: emissao, data_vencimento: venc,
+    status, anexo_url: null, anexo_nome: null, anexo_tipo: null
+  };
+
+  if (sb && !SUPA_URL.includes('COLE')) {
+    const { data, error } = await sb.from('notas').insert(row).select().single();
+    if (error) { toast('⚠ Erro: ' + error.message, 'err'); return; }
+    DB.notas.push({id:data.id,num:data.numero,cId:data.cliente_id,desc:data.descricao,valor:data.valor,emissao:data.data_emissao,venc:data.data_vencimento,status:data.status,anexo:null,anexoNome:null,anexoTipo:null});
+  } else {
+    const id = DB.notas.length ? Math.max(...DB.notas.map(n=>n.id))+1 : 1;
+    DB.notas.push({id,num,cId,desc,valor,emissao,venc,status,anexo:null,anexoNome:null,anexoTipo:null});
+    save(null,null);
+  }
+
+  closeModal('modal-emissao-nf');
+  renderNF(); renderDash(); renderAlertas(); updateBadge();
+  toast('✓ Nota NF ' + num + ' registrada no MEI Flow!');
+}
+
+
+// Copiar texto para clipboard
+function copiarTexto(txt) {
+  navigator.clipboard.writeText(txt).then(() => toast('📋 Copiado!')).catch(() => {
+    const el = document.createElement('textarea');
+    el.value = txt; document.body.appendChild(el);
+    el.select(); document.execCommand('copy');
+    document.body.removeChild(el); toast('📋 Copiado!');
+  });
+}
+
+
+// =========================================
+// PEDIDOS (avulsos sem NF)
+// =========================================
+let pedFiltText = '', pedFiltStatus = '';
+
+function filterPedidos(v) { pedFiltText = v.toLowerCase(); renderPedidos(); }
+function filterPedidoStatus(v) { pedFiltStatus = v; renderPedidos(); }
+
+function renderPedidos() {
+  const f = DB.pedidos.filter(p =>
+    (cNome(p.cId).toLowerCase().includes(pedFiltText) || (p.desc||'').toLowerCase().includes(pedFiltText)) &&
+    (!pedFiltStatus || p.status === pedFiltStatus)
+  );
+
+  const totPago = f.filter(p=>p.status==='pago').reduce((s,p)=>s+Number(p.valor),0);
+  const totPend = f.filter(p=>p.status==='pendente').reduce((s,p)=>s+Number(p.valor),0);
+  const pedBadge = document.getElementById('pedidos-badge');
+  const nPend = DB.pedidos.filter(p=>p.status==='pendente').length;
+  if(pedBadge){pedBadge.textContent=nPend;pedBadge.style.display=nPend?'':'none';}
+
+  document.getElementById('pedidos-metrics').innerHTML = `
+    <div class="metric-card"><div class="metric-label">Recebido (filtro)</div><div class="metric-value" style="color:var(--success);font-size:22px">${fmt(totPago)}</div><div class="metric-sub">${f.filter(p=>p.status==='pago').length} pago(s)</div></div>
+    <div class="metric-card"><div class="metric-label">Pendente (filtro)</div><div class="metric-value" style="color:var(--warning);font-size:22px">${fmt(totPend)}</div><div class="metric-sub">${f.filter(p=>p.status==='pendente').length} pendente(s)</div></div>
+  `;
+
+  const statusMap = {
+    pago:      ['success','✅ Pago'],
+    pendente:  ['warning','⏳ Pendente'],
+    cancelado: ['danger', '❌ Cancelado'],
+  };
+
+  document.getElementById('pedidos-table').innerHTML = f.length ? f.map(p => {
+    const [cls, lbl] = statusMap[p.status] || ['info', p.status];
+    return `<tr>
+      <td style="font-weight:500">${cNome(p.cId)}</td>
+      <td style="font-size:13px;color:var(--text-muted)">${p.desc||'—'}</td>
+      <td class="td-mono" style="color:var(--success)">${fmt(p.valor)}</td>
+      <td>${fd(p.data)}</td>
+      <td>
+        <select onchange="updPedidoStatus(${p.id},this.value)" style="margin:0;padding:4px 8px;font-size:12px;width:auto">
+          ${['pendente','pago','cancelado'].map(s=>`<option value="${s}" ${p.status===s?'selected':''}>${s.charAt(0).toUpperCase()+s.slice(1)}</option>`).join('')}
+        </select>
+      </td>
+      <td style="display:flex;gap:6px;align-items:center">
+        ${p.status==='pago'?`
+          <button class="btn btn-ghost btn-sm" onclick="gerarReciboPedido(${p.id})" style="font-size:12px">🧾 Recibo</button>
+          <button class="btn btn-ghost btn-sm" onclick="enviarEmailPedido(${p.id})" style="font-size:12px">📧 E-mail</button>
+        `:''}
+        <button class="btn btn-ghost btn-sm" onclick="editarPedido(${p.id})" style="font-size:12px">✏</button>
+        <button class="btn-icon" onclick="delPedido(${p.id})">✕</button>
+      </td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">🛒</div><div class="empty-title">Nenhum pedido</div><div class="empty-desc">Adicione serviços avulsos aqui</div></div></td></tr>`;
+}
+
+async function salvarPedido() {
+  const editId = document.getElementById('ped-id').value;
+  const cId = parseInt(document.getElementById('ped-cli').value);
+  const valor = parseFloat(document.getElementById('ped-valor').value);
+  const desc = document.getElementById('ped-desc').value.trim();
+  const data = document.getElementById('ped-data').value;
+  const status = document.getElementById('ped-status').value;
+  if (!cId || !valor || !desc) { toast('⚠ Preencha os campos obrigatórios','warn'); return; }
+
+  const row = { cliente_id:cId, valor, descricao:desc, data, status };
+
+  if (editId) {
+    if (sb&&!SUPA_URL.includes('COLE')) await sb.from('pedidos').update(row).eq('id',editId);
+    const idx = DB.pedidos.findIndex(p=>p.id==editId);
+    if(idx>-1) DB.pedidos[idx] = {...DB.pedidos[idx], cId, valor, desc, data, status};
+    toast('✓ Pedido atualizado!');
+  } else {
+    if (sb&&!SUPA_URL.includes('COLE')) {
+      const {data:d,error} = await sb.from('pedidos').insert(row).select().single();
+      if(error){toast('⚠ Erro: '+error.message,'err');return;}
+      DB.pedidos.unshift({id:d.id,cId:d.cliente_id,desc:d.descricao,valor:d.valor,data:d.data,status:d.status});
+    } else {
+      const id = DB.pedidos.length?Math.max(...DB.pedidos.map(p=>p.id))+1:1;
+      DB.pedidos.unshift({id,cId,desc,valor,data,status});
+      save(null,null);
+    }
+    toast('✓ Pedido registrado!');
+  }
+  closeModal('modal-pedido');
+  renderPedidos(); renderDash();
+  ['ped-id','ped-valor','ped-desc','ped-data'].forEach(id=>document.getElementById(id).value='');
+}
+
+function editarPedido(id) {
+  const p = DB.pedidos.find(x=>x.id==id);
+  if(!p) return;
+  document.getElementById('ped-id').value = p.id;
+  document.getElementById('ped-valor').value = p.valor;
+  document.getElementById('ped-desc').value = p.desc||'';
+  document.getElementById('ped-data').value = p.data||'';
+  document.getElementById('ped-status').value = p.status||'pendente';
+  // fill select and set client
+  const sel = document.getElementById('ped-cli');
+  sel.innerHTML = DB.clientes.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('');
+  sel.value = p.cId;
+  document.getElementById('ped-modal-title').textContent = 'Editar pedido';
+  document.getElementById('ped-save-btn').textContent = 'Salvar alterações';
+  document.getElementById('modal-pedido').style.display = 'flex';
+}
+
+async function updPedidoStatus(id, status) {
+  const p = DB.pedidos.find(x=>x.id==id);
+  if(!p) return;
+  const prevStatus = p.status;
+  p.status = status;
+
+  // Update pedido status
+  if(sb&&!SUPA_URL.includes('COLE')) {
+    const {error:eUpd} = await sb.from('pedidos').update({status}).eq('id', id);
+    if(eUpd) { toast('⚠ Erro ao atualizar: '+eUpd.message,'err'); p.status=prevStatus; return; }
+  }
+
+  // Auto-create lancamento when marked as pago
+  if(status==='pago' && prevStatus!=='pago') {
+    const hoje = new Date().toISOString().split('T')[0];
+    const lancRow = {
+      cliente_id: p.cId,
+      descricao: p.desc || 'Pedido avulso',
+      valor: p.valor,
+      data: p.data || hoje,
+      nf_numero: null,
+      status_pgto: 'recebido'
+    };
+    if(sb&&!SUPA_URL.includes('COLE')) {
+      const {data:ld, error:eLanc} = await sb.from('lancamentos').insert(lancRow).select().single();
+      if(eLanc) {
+        toast('⚠ Erro ao criar lançamento: '+eLanc.message,'err');
+      } else {
+        DB.lancs.push({
+          id:ld.id, cId:ld.cliente_id, desc:ld.descricao,
+          valor:ld.valor, data:ld.data, nf:null,
+          status:'recebido', comprovante:null,
+          comprovanteNome:null, comprovanteTipo:null
+        });
+        toast('✓ Pago! Lançamento criado em Lançamentos 🎉');
+      }
+    } else {
+      const lid = DB.lancs.length ? Math.max(...DB.lancs.map(l=>l.id))+1 : 1;
+      DB.lancs.push({id:lid, cId:p.cId, desc:p.desc||'Pedido avulso',
+        valor:p.valor, data:p.data||hoje, nf:null,
+        status:'recebido', comprovante:null,
+        comprovanteNome:null, comprovanteTipo:null});
+      save(null,null);
+      toast('✓ Pago! Lançamento criado em Lançamentos 🎉');
+    }
+  } else {
+    if(!sb||SUPA_URL.includes('COLE')) save(null,null);
+    toast('✓ Status atualizado');
+  }
+
+  renderPedidos(); renderLanc(); renderDash();
+}
+
+async function delPedido(id) {
+  if(!confirm('Remover este pedido?')) return;
+  if(sb&&!SUPA_URL.includes('COLE')) await sb.from('pedidos').delete().eq('id',id);
+  DB.pedidos = DB.pedidos.filter(p=>p.id!==id);
+  save(null,null); renderPedidos(); renderDash(); toast('Pedido removido','warn');
+}
+
+function gerarReciboPedido(pedId) {
+  const p = DB.pedidos.find(x=>x.id==pedId);
+  if(!p || p.status!=='pago') { toast('⚠ Pedido precisa estar pago para gerar recibo','warn'); return; }
+  // Reuse existing gerarRecibo logic by building a fake lanc object
+  const fakeLanc = { id: pedId, cId: p.cId, valor: p.valor, data: p.data, desc: p.desc, nf: null };
+  // temporarily add to DB.lancs for the recibo function
+  const prev = DB.lancs;
+  DB.lancs = [...DB.lancs, fakeLanc];
+  gerarRecibo(pedId);
+  DB.lancs = prev;
+}
+
+
+// =========================================
+// GMAIL API — envio com PDF anexado
+// =========================================
+const GMAIL_CLIENT_ID = '125305798583-vc9la0hcjgvb55qhvpn8o1hclnlvq0ub.apps.googleusercontent.com';
+const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.send';
+let gmailToken = null;
+
+function buildEmailBody(data) {
+  return `Olá, ${data.nome}!
+
+Passando para confirmar que recebemos o seu pagamento com sucesso. Segue o recibo abaixo:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  RECIBO DE PAGAMENTO #${data.num}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Prestador:  ${PRESTADOR.nome}
+CNPJ:       ${PRESTADOR.cnpj}
+
+Recebido de: ${data.nome}
+Serviço:     ${data.desc}${data.nf ? '\nNota Fiscal: ' + data.nf : ''}
+Valor:       R$ ${Number(data.valor).toLocaleString('pt-BR',{minimumFractionDigits:2})}
+Data:        ${data.data ? data.data.split('-').reverse().join('/') : new Date().toLocaleDateString('pt-BR')}
+
+Pix: ${PRESTADOR.pix} (${PRESTADOR.pixTipo})
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Obrigado pela confiança! Qualquer dúvida estou à disposição.
+
+Atenciosamente,
+${PRESTADOR.nome}`;
+}
+
+async function abrirGmail(email, assunto, corpo, pdfBase64 = null) {
+  // Try Gmail API first (with PDF), fallback to mailto
+  if (!gmailToken) {
+    await autenticarGmail();
+  }
+  if (gmailToken) {
+    await enviarViaAPI(email, assunto, corpo, pdfBase64);
+  } else {
+    // Fallback: open Gmail compose
+    const url = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}&su=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`;
+    window.open(url, '_blank');
+    toast('📧 Gmail aberto — faça login para envio automático.');
+  }
+}
+
+function autenticarGmail() {
+  return new Promise((resolve) => {
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: GMAIL_CLIENT_ID,
+      scope: GMAIL_SCOPE,
+      callback: (resp) => {
+        if (resp.access_token) {
+          gmailToken = resp.access_token;
+          const btn = document.getElementById('gmail-connect-btn');
+          const txt = document.getElementById('gmail-status-txt');
+          if(btn) btn.style.borderColor = 'rgba(52,211,153,.4)';
+          if(txt) txt.textContent = '✓ Gmail conectado';
+          toast('✓ Gmail conectado! E-mails serão enviados automaticamente.');
+        }
+        resolve();
+      },
+    });
+    client.requestAccessToken();
+  });
+}
+
+async function enviarViaAPI(to, subject, bodyText, pdfBase64 = null) {
+  try {
+    // Build MIME message
+    const boundary = 'meiflow_boundary_' + Date.now();
+    let mime = '';
+
+    if (pdfBase64) {
+      // Multipart with PDF attachment
+      mime = [
+        `MIME-Version: 1.0`,
+        `To: ${to}`,
+        `Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`,
+        `Content-Type: multipart/mixed; boundary="${boundary}"`,
+        ``,
+        `--${boundary}`,
+        `Content-Type: text/plain; charset="UTF-8"`,
+        `Content-Transfer-Encoding: quoted-printable`,
+        ``,
+        bodyText,
+        ``,
+        `--${boundary}`,
+        `Content-Type: application/pdf; name="recibo.pdf"`,
+        `Content-Disposition: attachment; filename="recibo.pdf"`,
+        `Content-Transfer-Encoding: base64`,
+        ``,
+        pdfBase64,
+        `--${boundary}--`,
+      ].join('\r\n');
+    } else {
+      // Plain text only
+      mime = [
+        `MIME-Version: 1.0`,
+        `To: ${to}`,
+        `Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`,
+        `Content-Type: text/plain; charset="UTF-8"`,
+        ``,
+        bodyText,
+      ].join('\r\n');
+    }
+
+    // Encode to base64url
+    const encoded = btoa(unescape(encodeURIComponent(mime)))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+    const resp = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + gmailToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ raw: encoded }),
+    });
+
+    if (resp.ok) {
+      toast('✅ E-mail enviado com sucesso' + (pdfBase64 ? ' (com PDF anexado)!' : '!'));
+    } else {
+      const err = await resp.json();
+      if (err.error?.code === 401) {
+        gmailToken = null;
+        toast('⚠ Sessão expirada — clique em e-mail novamente', 'warn');
+      } else {
+        throw new Error(err.error?.message);
+      }
+    }
+  } catch(e) {
+    console.error('Gmail API error:', e);
+    toast('⚠ Erro ao enviar: ' + e.message, 'err');
+  }
+}
+
+// Generate PDF base64 from recibo HTML using print
+async function gerarPDFBase64() {
+  return null; // PDF gerado client-side requer lib externa — usa texto por ora
+}
+
+async function enviarReciboEmail() {
+  if (!reciboEmailData) { toast('⚠ Nenhum recibo aberto','warn'); return; }
+  const d = reciboEmailData;
+  if (!d.email) {
+    const email = prompt('E-mail do cliente:', '');
+    if (!email) return;
+    d.email = email;
+  }
+  const assunto = `Recibo de pagamento #${d.num} — ${PRESTADOR.nome}`;
+  const corpo = buildEmailBody(d);
+
+  // Try to generate PDF from current recibo HTML
+  const reciboHtml = document.getElementById('recibo-preview')?.innerHTML;
+  let pdfB64 = null;
+  if (reciboHtml) {
+    try {
+      pdfB64 = await htmlParaPDFBase64(reciboHtml, d);
+    } catch(e) { console.warn('PDF gen failed, sending text only'); }
+  }
+
+  await abrirGmail(d.email, assunto, corpo, pdfB64);
+}
+
+async function htmlParaPDFBase64(html, d) {
+  // Use browser print to blob via iframe
+  return new Promise((resolve, reject) => {
+    try {
+      const iframe = document.createElement('iframe');
+      iframe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:794px;height:1123px;';
+      document.body.appendChild(iframe);
+      iframe.contentDocument.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+        <style>body{margin:0;font-family:'Helvetica Neue',Arial,sans-serif;}@page{margin:0;size:A4;}</style>
+        </head><body>${html}</body></html>`);
+      iframe.contentDocument.close();
+      setTimeout(() => {
+        document.body.removeChild(iframe);
+        resolve(null); // Can't get blob without user gesture — send text only
+      }, 100);
+    } catch(e) { reject(e); }
+  });
+}
+
+function enviarEmailLanc(lancId) {
+  const l = DB.lancs.find(x => x.id == lancId);
+  if (!l) return;
+  const c = DB.clientes.find(x => x.id == l.cId);
+  const email = c ? (c.email||'') : '';
+  if (!email) {
+    const e = prompt('E-mail do cliente (não cadastrado):', '');
+    if (!e) return;
+  }
+  const data = {
+    email: email || prompt('E-mail do cliente:', '')||'',
+    nome: c ? (c.resp||c.nome) : cNome(l.cId),
+    valor: l.valor,
+    desc: l.desc || 'Serviços prestados',
+    data: l.data,
+    nf: l.nf,
+    num: String(l.id).padStart(4,'0')
+  };
+  if (!data.email) return;
+  const assunto = `Recibo de pagamento #${data.num} — ${PRESTADOR.nome}`;
+  abrirGmail(data.email, assunto, buildEmailBody(data));
+}
+
+function enviarEmailPedido(pedId) {
+  const p = DB.pedidos.find(x => x.id == pedId);
+  if (!p || p.status !== 'pago') return;
+  const c = DB.clientes.find(x => x.id == p.cId);
+  const email = c ? (c.email||'') : '';
+  const data = {
+    email: email || prompt('E-mail do cliente:', '')||'',
+    nome: c ? (c.resp||c.nome) : cNome(p.cId),
+    valor: p.valor,
+    desc: p.desc || 'Serviço avulso',
+    data: p.data,
+    nf: null,
+    num: String(p.id).padStart(4,'0')
+  };
+  if (!data.email) return;
+  const assunto = `Recibo de pagamento #${data.num} — ${PRESTADOR.nome}`;
+  abrirGmail(data.email, assunto, buildEmailBody(data));
+}
+
+
 // =========================================
 // SUPABASE CONFIG — cole suas credenciais
 // =========================================
