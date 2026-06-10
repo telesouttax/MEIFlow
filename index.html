@@ -298,27 +298,33 @@ function abrirGovBr() {
   const competencia = document.getElementById('em-competencia').value;
   const aliquota = document.getElementById('em-aliquota').value || '2';
 
-  // Abre o portal gov.br na página de emissão
-  // O portal não aceita parâmetros por URL — você preenche lá manualmente
-  window.open('https://www.nfse.gov.br/EmissorNacional/Dashboard', '_blank');
+  window.open('https://www.nfse.gov.br/EmissorNacional/DPS/Pessoas', '_blank');
 
-  // Mostra um modal de instruções com os dados para copiar
   const c2 = DB.clientes.find(x => x.id == cId);
-  const infoHtml = `
-    <div style="font-size:13px;line-height:1.7">
-      <p style="color:var(--text-muted);margin-bottom:1rem">O portal gov.br foi aberto. Use os dados abaixo para preencher lá:</p>
-      <div style="background:var(--dark3);border-radius:8px;padding:1rem;font-size:13px">
-        <div style="margin-bottom:.5rem"><span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em">Tomador</span><div style="font-weight:500">${c2 ? c2.nome : '—'}</div></div>
-        ${c2 && c2.cnpj ? `<div style="margin-bottom:.5rem"><span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em">CNPJ/CPF</span><div style="font-weight:500;font-family:var(--mono)">${c2.cnpj}</div></div>` : ''}
-        <div style="margin-bottom:.5rem"><span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em">Descrição</span><div style="font-weight:500">${desc}</div></div>
-        <div style="margin-bottom:.5rem"><span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em">Valor</span><div style="font-weight:600;color:var(--success);font-family:var(--mono)">R$ ${parseFloat(valor).toLocaleString('pt-BR',{minimumFractionDigits:2})}</div></div>
-        ${competencia ? `<div><span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em">Competência</span><div style="font-weight:500">${competencia}</div></div>` : ''}
+  const compFormatado = competencia ? competencia.split('-').reverse().join('/') : '—';
+
+  // Build copy-friendly summary
+  function copyRow(label, value, fieldId) {
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:.5rem 0;border-bottom:1px solid rgba(124,58,237,.1)">
+      <div>
+        <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">${label}</div>
+        <div style="font-weight:500;margin-top:1px">${value}</div>
       </div>
-      <p style="color:var(--text-muted);font-size:12px;margin-top:1rem">Após emitir, volte e registre o número da nota no campo abaixo. ⬇</p>
+      <button onclick="copiarTexto('${value.replace(/'/g,"\'")}')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--purple-ultra);cursor:pointer;font-size:11px;padding:3px 8px;flex-shrink:0;margin-left:8px">📋 Copiar</button>
     </div>`;
+  }
+
+  const infoHtml =
+    copyRow('Pág. 1 — Data de competência', compFormatado) +
+    (c2 && c2.nome ? copyRow('Pág. 2 — Tomador (razão social)', c2.nome) : '') +
+    (c2 && c2.cnpj ? copyRow('Pág. 2 — CNPJ/CPF do tomador', c2.cnpj) : '') +
+    copyRow('Pág. 2 — Cód. tributação nacional', '17.02.04') +
+    copyRow('Pág. 2 — Descrição do serviço', desc) +
+    copyRow('Pág. 3 — Valor do serviço', 'R$ ' + parseFloat(valor).toLocaleString('pt-BR',{minimumFractionDigits:2}));
+
   document.getElementById('em-tomador-wrap').style.display = 'block';
   document.getElementById('em-tomador-info').innerHTML = infoHtml;
-  toast('🏛 gov.br aberto! Preencha lá e volte para registrar a nota.');
+  toast('🏛 gov.br aberto! Use o resumo abaixo para copiar os dados.');
 }
 
 async function registrarNFAposEmissao() {
@@ -359,6 +365,17 @@ async function registrarNFAposEmissao() {
   closeModal('modal-emissao-nf');
   renderNF(); renderDash(); renderAlertas(); updateBadge();
   toast('✓ Nota NF ' + num + ' registrada no MEI Flow!');
+}
+
+
+// Copiar texto para clipboard
+function copiarTexto(txt) {
+  navigator.clipboard.writeText(txt).then(() => toast('📋 Copiado!')).catch(() => {
+    const el = document.createElement('textarea');
+    el.value = txt; document.body.appendChild(el);
+    el.select(); document.execCommand('copy');
+    document.body.removeChild(el); toast('📋 Copiado!');
+  });
 }
 
 </script>
@@ -737,72 +754,98 @@ tr:hover td{background:rgba(124,58,237,.04);}
 
 <!-- MODAL EMISSÃO NF GOV.BR -->
 <div class="modal-overlay" id="modal-emissao-nf" style="display:none" onclick="if(event.target===this)closeModal('modal-emissao-nf')">
-  <div class="modal" style="max-width:540px">
-    <div class="modal-title">📝 Emitir nota fiscal — NFS-e gov.br</div>
+  <div class="modal" style="max-width:580px">
+    <div class="modal-title">📝 Preparar emissão — NFS-e gov.br</div>
     <button class="modal-close" onclick="closeModal('modal-emissao-nf')">✕</button>
 
-    <div style="background:rgba(124,58,237,.08);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.875rem 1rem;margin-bottom:1.25rem;font-size:13px;color:var(--text-muted);line-height:1.6">
-      Preencha os dados abaixo e clique em <strong style="color:var(--text)">Abrir gov.br</strong>. O portal abrirá numa nova aba — você só precisa confirmar a emissão lá. Depois volte aqui e registre o número da nota.
+    <div style="background:rgba(19,81,180,.1);border:1px solid rgba(19,81,180,.3);border-radius:var(--radius-sm);padding:.875rem 1rem;margin-bottom:1.25rem;font-size:13px;color:#93b8f5;line-height:1.6;display:flex;gap:10px;align-items:flex-start">
+      <span style="font-size:18px;flex-shrink:0">🏛</span>
+      <span>Preencha os campos abaixo, clique em <strong style="color:white">Abrir gov.br</strong> e use o resumo lateral para copiar os dados. Após emitir, registre o número aqui embaixo.</span>
     </div>
 
-    <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem;display:flex;align-items:center;gap:8px"><span>Dados da nota</span><div style="flex:1;height:1px;background:var(--border)"></div></div>
-
-    <div class="form-row">
-      <div class="form-group">
-        <label>Cliente (tomador) *</label>
-        <select id="em-cliente" onchange="preencherDadosEmissao(this.value)"></select>
-      </div>
-      <div class="form-group">
-        <label>Valor do serviço (R$) *</label>
-        <input type="number" id="em-valor" placeholder="800">
-      </div>
+    <!-- PASSO 1 -->
+    <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem;display:flex;align-items:center;gap:8px">
+      <span style="background:var(--purple);color:white;width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0">1</span>
+      <span>Página 1 — Data de competência</span>
+      <div style="flex:1;height:1px;background:var(--border)"></div>
     </div>
     <div class="form-group">
-      <label>Descrição do serviço *</label>
-      <input type="text" id="em-desc" placeholder="Serviços de design gráfico — julho/2025">
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Competência (mês/ano)</label>
-        <input type="month" id="em-competencia">
-      </div>
-      <div class="form-group">
-        <label>Alíquota ISS (%)</label>
-        <input type="number" id="em-aliquota" placeholder="2" min="0" max="5" step="0.1" value="2">
-      </div>
+      <label>Data de competência *</label>
+      <input type="month" id="em-competencia">
+      <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Mês e ano a que se refere o serviço prestado</div>
     </div>
 
-    <!-- DADOS DO TOMADOR (auto-preenchidos) -->
+    <!-- PASSO 2 -->
+    <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin:.875rem 0 .75rem;display:flex;align-items:center;gap:8px">
+      <span style="background:var(--purple);color:white;width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0">2</span>
+      <span>Página 2 — Serviço prestado</span>
+      <div style="flex:1;height:1px;background:var(--border)"></div>
+    </div>
+
+    <div class="form-group">
+      <label>Cliente (tomador)</label>
+      <select id="em-cliente" onchange="preencherDadosEmissao(this.value)"></select>
+    </div>
+
+    <div style="background:var(--dark3);border-radius:var(--radius-sm);padding:.75rem 1rem;margin-bottom:1rem;font-size:13px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em">Código de Tributação Nacional</span>
+        <button onclick="copiarTexto('17.02.04')" style="background:none;border:none;color:var(--purple-ultra);cursor:pointer;font-size:11px">📋 Copiar</button>
+      </div>
+      <div style="font-family:var(--mono);font-weight:600;color:var(--purple-ultra)">17.02.04</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Redação, edição, revisão e congêneres</div>
+    </div>
+
+    <div class="form-group">
+      <label>Descrição do serviço *</label>
+      <textarea id="em-desc" rows="3" placeholder="Ex: Serviços de design gráfico — criação de flyer para divulgação" style="resize:vertical"></textarea>
+    </div>
+
+    <!-- PASSO 3 -->
+    <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin:.875rem 0 .75rem;display:flex;align-items:center;gap:8px">
+      <span style="background:var(--purple);color:white;width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0">3</span>
+      <span>Página 3 — Valor do serviço</span>
+      <div style="flex:1;height:1px;background:var(--border)"></div>
+    </div>
+    <div class="form-group">
+      <label>Valor do serviço prestado (R$) *</label>
+      <input type="number" id="em-valor" placeholder="800">
+    </div>
+
+    <!-- RESUMO PARA COPIAR -->
     <div id="em-tomador-wrap" style="display:none">
-      <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem;display:flex;align-items:center;gap:8px"><span>Tomador detectado</span><div style="flex:1;height:1px;background:var(--border)"></div></div>
+      <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin:.875rem 0 .75rem;display:flex;align-items:center;gap:8px"><span>Resumo do tomador</span><div style="flex:1;height:1px;background:var(--border)"></div></div>
       <div style="background:var(--dark3);border-radius:var(--radius-sm);padding:.875rem 1rem;font-size:13px;margin-bottom:1rem" id="em-tomador-info"></div>
     </div>
 
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-emissao-nf')">Cancelar</button>
       <button class="btn btn-primary" style="width:auto;background:linear-gradient(135deg,#1351B4,#0E3F8A)" onclick="abrirGovBr()">
-        🏛 Abrir gov.br e emitir
+        🏛 Abrir gov.br
       </button>
     </div>
 
     <!-- APÓS EMITIR -->
     <div style="border-top:1px solid var(--border);margin-top:1.25rem;padding-top:1.25rem">
-      <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem">Após emitir no gov.br — registre aqui</div>
+      <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem;display:flex;align-items:center;gap:8px">
+        <span style="background:var(--success);color:#000;width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0">✓</span>
+        <span>Após emitir — registre a nota aqui</span>
+      </div>
       <div class="form-row">
         <div class="form-group">
-          <label>Número da NF emitida</label>
+          <label>Número da NF emitida *</label>
           <input type="text" id="em-num-nf" placeholder="Ex: 0042">
         </div>
         <div class="form-group">
           <label>Status</label>
           <select id="em-status-nf">
-            <option value="enviada">Enviada</option>
             <option value="emitida">Emitida</option>
+            <option value="enviada">Enviada ao cliente</option>
           </select>
         </div>
       </div>
-      <button class="btn btn-success" style="width:100%;justify-content:center" onclick="registrarNFAposEmissao()">
-        ✓ Registrar nota no MEI Flow
+      <button class="btn btn-primary" style="width:100%;justify-content:center;background:linear-gradient(135deg,var(--success),#059669)" onclick="registrarNFAposEmissao()">
+        ✓ Registrar NF no MEI Flow
       </button>
     </div>
   </div>
@@ -2008,27 +2051,33 @@ function abrirGovBr() {
   const competencia = document.getElementById('em-competencia').value;
   const aliquota = document.getElementById('em-aliquota').value || '2';
 
-  // Abre o portal gov.br na página de emissão
-  // O portal não aceita parâmetros por URL — você preenche lá manualmente
-  window.open('https://www.nfse.gov.br/EmissorNacional/Dashboard', '_blank');
+  window.open('https://www.nfse.gov.br/EmissorNacional/DPS/Pessoas', '_blank');
 
-  // Mostra um modal de instruções com os dados para copiar
   const c2 = DB.clientes.find(x => x.id == cId);
-  const infoHtml = `
-    <div style="font-size:13px;line-height:1.7">
-      <p style="color:var(--text-muted);margin-bottom:1rem">O portal gov.br foi aberto. Use os dados abaixo para preencher lá:</p>
-      <div style="background:var(--dark3);border-radius:8px;padding:1rem;font-size:13px">
-        <div style="margin-bottom:.5rem"><span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em">Tomador</span><div style="font-weight:500">${c2 ? c2.nome : '—'}</div></div>
-        ${c2 && c2.cnpj ? `<div style="margin-bottom:.5rem"><span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em">CNPJ/CPF</span><div style="font-weight:500;font-family:var(--mono)">${c2.cnpj}</div></div>` : ''}
-        <div style="margin-bottom:.5rem"><span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em">Descrição</span><div style="font-weight:500">${desc}</div></div>
-        <div style="margin-bottom:.5rem"><span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em">Valor</span><div style="font-weight:600;color:var(--success);font-family:var(--mono)">R$ ${parseFloat(valor).toLocaleString('pt-BR',{minimumFractionDigits:2})}</div></div>
-        ${competencia ? `<div><span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em">Competência</span><div style="font-weight:500">${competencia}</div></div>` : ''}
+  const compFormatado = competencia ? competencia.split('-').reverse().join('/') : '—';
+
+  // Build copy-friendly summary
+  function copyRow(label, value, fieldId) {
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:.5rem 0;border-bottom:1px solid rgba(124,58,237,.1)">
+      <div>
+        <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">${label}</div>
+        <div style="font-weight:500;margin-top:1px">${value}</div>
       </div>
-      <p style="color:var(--text-muted);font-size:12px;margin-top:1rem">Após emitir, volte e registre o número da nota no campo abaixo. ⬇</p>
+      <button onclick="copiarTexto('${value.replace(/'/g,"\'")}')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--purple-ultra);cursor:pointer;font-size:11px;padding:3px 8px;flex-shrink:0;margin-left:8px">📋 Copiar</button>
     </div>`;
+  }
+
+  const infoHtml =
+    copyRow('Pág. 1 — Data de competência', compFormatado) +
+    (c2 && c2.nome ? copyRow('Pág. 2 — Tomador (razão social)', c2.nome) : '') +
+    (c2 && c2.cnpj ? copyRow('Pág. 2 — CNPJ/CPF do tomador', c2.cnpj) : '') +
+    copyRow('Pág. 2 — Cód. tributação nacional', '17.02.04') +
+    copyRow('Pág. 2 — Descrição do serviço', desc) +
+    copyRow('Pág. 3 — Valor do serviço', 'R$ ' + parseFloat(valor).toLocaleString('pt-BR',{minimumFractionDigits:2}));
+
   document.getElementById('em-tomador-wrap').style.display = 'block';
   document.getElementById('em-tomador-info').innerHTML = infoHtml;
-  toast('🏛 gov.br aberto! Preencha lá e volte para registrar a nota.');
+  toast('🏛 gov.br aberto! Use o resumo abaixo para copiar os dados.');
 }
 
 async function registrarNFAposEmissao() {
@@ -2069,6 +2118,17 @@ async function registrarNFAposEmissao() {
   closeModal('modal-emissao-nf');
   renderNF(); renderDash(); renderAlertas(); updateBadge();
   toast('✓ Nota NF ' + num + ' registrada no MEI Flow!');
+}
+
+
+// Copiar texto para clipboard
+function copiarTexto(txt) {
+  navigator.clipboard.writeText(txt).then(() => toast('📋 Copiado!')).catch(() => {
+    const el = document.createElement('textarea');
+    el.value = txt; document.body.appendChild(el);
+    el.select(); document.execCommand('copy');
+    document.body.removeChild(el); toast('📋 Copiado!');
+  });
 }
 
 </script>
