@@ -371,6 +371,137 @@ function copiarTexto(txt) {
   });
 }
 
+
+// =========================================
+// PEDIDOS (avulsos sem NF)
+// =========================================
+let pedFiltText = '', pedFiltStatus = '';
+
+function filterPedidos(v) { pedFiltText = v.toLowerCase(); renderPedidos(); }
+function filterPedidoStatus(v) { pedFiltStatus = v; renderPedidos(); }
+
+function renderPedidos() {
+  const f = DB.pedidos.filter(p =>
+    (cNome(p.cId).toLowerCase().includes(pedFiltText) || (p.desc||'').toLowerCase().includes(pedFiltText)) &&
+    (!pedFiltStatus || p.status === pedFiltStatus)
+  );
+
+  const totPago = f.filter(p=>p.status==='pago').reduce((s,p)=>s+Number(p.valor),0);
+  const totPend = f.filter(p=>p.status==='pendente').reduce((s,p)=>s+Number(p.valor),0);
+  const pedBadge = document.getElementById('pedidos-badge');
+  const nPend = DB.pedidos.filter(p=>p.status==='pendente').length;
+  if(pedBadge){pedBadge.textContent=nPend;pedBadge.style.display=nPend?'':'none';}
+
+  document.getElementById('pedidos-metrics').innerHTML = `
+    <div class="metric-card"><div class="metric-label">Recebido (filtro)</div><div class="metric-value" style="color:var(--success);font-size:22px">${fmt(totPago)}</div><div class="metric-sub">${f.filter(p=>p.status==='pago').length} pago(s)</div></div>
+    <div class="metric-card"><div class="metric-label">Pendente (filtro)</div><div class="metric-value" style="color:var(--warning);font-size:22px">${fmt(totPend)}</div><div class="metric-sub">${f.filter(p=>p.status==='pendente').length} pendente(s)</div></div>
+  `;
+
+  const statusMap = {
+    pago:      ['success','✅ Pago'],
+    pendente:  ['warning','⏳ Pendente'],
+    cancelado: ['danger', '❌ Cancelado'],
+  };
+
+  document.getElementById('pedidos-table').innerHTML = f.length ? f.map(p => {
+    const [cls, lbl] = statusMap[p.status] || ['info', p.status];
+    return `<tr>
+      <td style="font-weight:500">${cNome(p.cId)}</td>
+      <td style="font-size:13px;color:var(--text-muted)">${p.desc||'—'}</td>
+      <td class="td-mono" style="color:var(--success)">${fmt(p.valor)}</td>
+      <td>${fd(p.data)}</td>
+      <td>
+        <select onchange="updPedidoStatus(${p.id},this.value)" style="margin:0;padding:4px 8px;font-size:12px;width:auto">
+          ${['pendente','pago','cancelado'].map(s=>`<option value="${s}" ${p.status===s?'selected':''}>${s.charAt(0).toUpperCase()+s.slice(1)}</option>`).join('')}
+        </select>
+      </td>
+      <td style="display:flex;gap:6px;align-items:center">
+        ${p.status==='pago'?`<button class="btn btn-ghost btn-sm" onclick="gerarReciboPedido(${p.id})" style="font-size:12px">🧾 Recibo</button>`:''}
+        <button class="btn btn-ghost btn-sm" onclick="editarPedido(${p.id})" style="font-size:12px">✏</button>
+        <button class="btn-icon" onclick="delPedido(${p.id})">✕</button>
+      </td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">🛒</div><div class="empty-title">Nenhum pedido</div><div class="empty-desc">Adicione serviços avulsos aqui</div></div></td></tr>`;
+}
+
+async function salvarPedido() {
+  const editId = document.getElementById('ped-id').value;
+  const cId = parseInt(document.getElementById('ped-cli').value);
+  const valor = parseFloat(document.getElementById('ped-valor').value);
+  const desc = document.getElementById('ped-desc').value.trim();
+  const data = document.getElementById('ped-data').value;
+  const status = document.getElementById('ped-status').value;
+  if (!cId || !valor || !desc) { toast('⚠ Preencha os campos obrigatórios','warn'); return; }
+
+  const row = { cliente_id:cId, valor, descricao:desc, data, status };
+
+  if (editId) {
+    if (sb&&!SUPA_URL.includes('COLE')) await sb.from('pedidos').update(row).eq('id',editId);
+    const idx = DB.pedidos.findIndex(p=>p.id==editId);
+    if(idx>-1) DB.pedidos[idx] = {...DB.pedidos[idx], cId, valor, desc, data, status};
+    toast('✓ Pedido atualizado!');
+  } else {
+    if (sb&&!SUPA_URL.includes('COLE')) {
+      const {data:d,error} = await sb.from('pedidos').insert(row).select().single();
+      if(error){toast('⚠ Erro: '+error.message,'err');return;}
+      DB.pedidos.unshift({id:d.id,cId:d.cliente_id,desc:d.descricao,valor:d.valor,data:d.data,status:d.status});
+    } else {
+      const id = DB.pedidos.length?Math.max(...DB.pedidos.map(p=>p.id))+1:1;
+      DB.pedidos.unshift({id,cId,desc,valor,data,status});
+      save(null,null);
+    }
+    toast('✓ Pedido registrado!');
+  }
+  closeModal('modal-pedido');
+  renderPedidos(); renderDash();
+  ['ped-id','ped-valor','ped-desc','ped-data'].forEach(id=>document.getElementById(id).value='');
+}
+
+function editarPedido(id) {
+  const p = DB.pedidos.find(x=>x.id==id);
+  if(!p) return;
+  document.getElementById('ped-id').value = p.id;
+  document.getElementById('ped-valor').value = p.valor;
+  document.getElementById('ped-desc').value = p.desc||'';
+  document.getElementById('ped-data').value = p.data||'';
+  document.getElementById('ped-status').value = p.status||'pendente';
+  // fill select and set client
+  const sel = document.getElementById('ped-cli');
+  sel.innerHTML = DB.clientes.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('');
+  sel.value = p.cId;
+  document.getElementById('ped-modal-title').textContent = 'Editar pedido';
+  document.getElementById('ped-save-btn').textContent = 'Salvar alterações';
+  document.getElementById('modal-pedido').style.display = 'flex';
+}
+
+async function updPedidoStatus(id, status) {
+  const p = DB.pedidos.find(x=>x.id==id);
+  if(!p) return;
+  p.status = status;
+  if(sb&&!SUPA_URL.includes('COLE')) await sb.from('pedidos').update({status}).eq('id',id);
+  else save(null,null);
+  renderPedidos(); renderDash(); toast('✓ Status atualizado');
+}
+
+async function delPedido(id) {
+  if(!confirm('Remover este pedido?')) return;
+  if(sb&&!SUPA_URL.includes('COLE')) await sb.from('pedidos').delete().eq('id',id);
+  DB.pedidos = DB.pedidos.filter(p=>p.id!==id);
+  save(null,null); renderPedidos(); renderDash(); toast('Pedido removido','warn');
+}
+
+function gerarReciboPedido(pedId) {
+  const p = DB.pedidos.find(x=>x.id==pedId);
+  if(!p || p.status!=='pago') { toast('⚠ Pedido precisa estar pago para gerar recibo','warn'); return; }
+  // Reuse existing gerarRecibo logic by building a fake lanc object
+  const fakeLanc = { id: pedId, cId: p.cId, valor: p.valor, data: p.data, desc: p.desc, nf: null };
+  // temporarily add to DB.lancs for the recibo function
+  const prev = DB.lancs;
+  DB.lancs = [...DB.lancs, fakeLanc];
+  gerarRecibo(pedId);
+  DB.lancs = prev;
+}
+
 </script>
 <style>
 :root {
@@ -568,6 +699,10 @@ tr:hover td{background:rgba(124,58,237,.04);}
       <div class="nav-item" onclick="goTo('lancamentos',this)">
         <span style="font-size:16px">◈</span> Lançamentos
       </div>
+      <div class="nav-item" onclick="goTo('pedidos',this)">
+        <span style="font-size:16px">🛒</span> Pedidos
+        <span id="pedidos-badge" style="display:none;margin-left:auto;background:var(--warning);color:#000;border-radius:20px;padding:1px 7px;font-size:10px;font-weight:700"></span>
+      </div>
       <div class="nav-section-label">Relatórios</div>
       <div class="nav-item" onclick="goTo('relatorios',this)">
         <span style="font-size:16px">▤</span> Relatórios
@@ -667,6 +802,20 @@ tr:hover td{background:rgba(124,58,237,.04);}
     </section>
 
     <!-- RELATÓRIOS -->
+    <!-- PEDIDOS -->
+    <section class="section" id="sec-pedidos">
+      <div class="page-header">
+        <div><h1 class="page-title">Pedidos</h1><p class="page-sub">Serviços avulsos — sem nota fiscal</p></div>
+        <button class="btn btn-primary btn-sm" onclick="openModal('modal-pedido')">+ Novo pedido</button>
+      </div>
+      <div class="metrics-grid" id="pedidos-metrics" style="margin-bottom:1.5rem"></div>
+      <div class="toolbar">
+        <div class="search-wrap"><span class="search-icon">🔍</span><input type="text" placeholder="Buscar pedido..." oninput="filterPedidos(this.value)"></div>
+        <select onchange="filterPedidoStatus(this.value)"><option value="">Todos os status</option><option value="pendente">Pendente</option><option value="pago">Pago</option><option value="cancelado">Cancelado</option></select>
+      </div>
+      <div class="card"><div class="table-wrap"><table><thead><tr><th>Cliente</th><th>Descrição</th><th>Valor</th><th>Data</th><th>Status</th><th>Ações</th></tr></thead><tbody id="pedidos-table"></tbody></table></div></div>
+    </section>
+
     <section class="section" id="sec-relatorios">
       <div class="page-header">
         <div><h1 class="page-title">Relatórios</h1><p class="page-sub">Visão anual e controle do limite MEI</p></div>
@@ -973,6 +1122,34 @@ tr:hover td{background:rgba(124,58,237,.04);}
   </div>
 </div>
 
+<!-- MODAL PEDIDO -->
+<div class="modal-overlay" id="modal-pedido" style="display:none" onclick="if(event.target===this)closeModal('modal-pedido')">
+  <div class="modal">
+    <input type="hidden" id="ped-id" value="">
+    <div class="modal-title" id="ped-modal-title">Novo pedido</div>
+    <button class="modal-close" onclick="closeModal('modal-pedido')">✕</button>
+    <div class="form-row">
+      <div class="form-group"><label>Cliente *</label><select id="ped-cli"></select></div>
+      <div class="form-group"><label>Valor (R$) *</label><input type="number" id="ped-valor" placeholder="150"></div>
+    </div>
+    <div class="form-group"><label>Descrição do serviço *</label><input type="text" id="ped-desc" placeholder="Criação de flyer para evento"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Data</label><input type="date" id="ped-data"></div>
+      <div class="form-group"><label>Status</label>
+        <select id="ped-status">
+          <option value="pendente">⏳ Pendente</option>
+          <option value="pago">✅ Pago</option>
+          <option value="cancelado">❌ Cancelado</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-pedido')">Cancelar</button>
+      <button class="btn btn-primary" style="width:auto" id="ped-save-btn" onclick="salvarPedido()">Salvar pedido</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL LANÇAMENTO -->
 <div class="modal-overlay" id="modal-lanc" style="display:none" onclick="if(event.target===this)closeModal('modal-lanc')">
   <div class="modal">
@@ -1020,13 +1197,13 @@ let sb = null;
 try { sb = supabase.createClient(SUPA_URL, SUPA_KEY); } catch(e) {}
 
 // DB em memória (cache local)
-let DB = { clientes:[], notas:[], lancs:[], user:{name:'Designer',email:''} };
+let DB = { clientes:[], notas:[], lancs:[], pedidos:[], user:{name:'Designer',email:''} };
 
 async function dbLoad() {
   if (!sb || SUPA_URL.includes('COLE')) {
     // fallback localStorage (modo offline)
     const r = localStorage.getItem('meiflow_v2');
-    if (r) { const d = JSON.parse(r); DB.clientes=d.clientes||[]; DB.notas=d.notas||[]; DB.lancs=d.lancs||[]; }
+    if (r) { const d = JSON.parse(r); DB.clientes=d.clientes||[]; DB.notas=d.notas||[]; DB.lancs=d.lancs||[]; DB.pedidos=d.pedidos||[]; }
     return;
   }
   try {
@@ -1038,6 +1215,8 @@ async function dbLoad() {
     DB.clientes = (c.data||[]).map(x=>({id:x.id,nome:x.nome,resp:x.responsavel,email:x.email,tel:x.telefone,cnpj:x.cnpj,valor:x.valor_mensal,dia:x.dia_pagamento,diaTipo:x.dia_tipo||'fixo',tipoContrato:x.tipo_contrato||'recorrente',servico:x.servico,status:x.status||'pendente',emiteNF:x.emite_nf!==false}));
     DB.notas    = (n.data||[]).map(x=>({id:x.id,num:x.numero,cId:x.cliente_id,desc:x.descricao,valor:x.valor,emissao:x.data_emissao,venc:x.data_vencimento,status:x.status,anexo:x.anexo_url,anexoNome:x.anexo_nome,anexoTipo:x.anexo_tipo}));
     DB.lancs    = (l.data||[]).map(x=>({id:x.id,cId:x.cliente_id,desc:x.descricao,valor:x.valor,data:x.data,nf:x.nf_numero,status:x.status_pgto||'recebido',comprovante:x.comprovante_url,comprovanteNome:x.comprovante_nome,comprovanteTipo:x.comprovante_tipo}));
+    const {data:ped} = await sb.from('pedidos').select('*').order('data',{ascending:false});
+    DB.pedidos = (ped||[]).map(x=>({id:x.id,cId:x.cliente_id,desc:x.descricao,valor:x.valor,data:x.data,status:x.status||'pendente'}));
   } catch(e) { console.error('Supabase load error', e); }
 }
 
@@ -1117,7 +1296,7 @@ function init(){
   setInterval(async()=>{ await dbLoad(); renderCli(); renderDash(); updateBadge(); }, 30000);
 }
 
-function renderAll(){renderDash();renderCli();renderNF();renderLanc();renderAlertas();renderRel();updateBadge();updatePendingBadge();}
+function renderAll(){renderDash();renderCli();renderNF();renderLanc();renderPedidos();renderAlertas();renderRel();updateBadge();updatePendingBadge();}
 
 async function reloadAndRender(){await dbLoad();renderAll();}
 
@@ -1193,8 +1372,9 @@ function renderDash(){
   // Pendente = NFs não pagas + lançamentos pendentes/atrasados
   const pendNF=DB.notas.filter(n=>n.status!=='paga').reduce((s,n)=>s+Number(n.valor),0);
   const pendLanc=DB.lancs.filter(l=>l.status==='pendente'||l.status==='atrasado').reduce((s,l)=>s+Number(l.valor),0);
-  const pend=pendNF+pendLanc;
-  const pendQtd=DB.notas.filter(n=>n.status!=='paga').length+DB.lancs.filter(l=>l.status==='pendente'||l.status==='atrasado').length;
+  const pendPed=DB.pedidos.filter(p=>p.status==='pendente').reduce((s,p)=>s+Number(p.valor),0);
+  const pend=pendNF+pendLanc+pendPed;
+  const pendQtd=DB.notas.filter(n=>n.status!=='paga').length+DB.lancs.filter(l=>l.status==='pendente'||l.status==='atrasado').length+DB.pedidos.filter(p=>p.status==='pendente').length;
   const totalAno=DB.lancs.filter(l=>new Date(l.data).getFullYear()===ano&&l.status==='recebido').reduce((s,l)=>s+Number(l.valor),0);
   const clientesAtivos=DB.clientes.filter(c=>c.status==='ativo').length;
   const lim=81000;
@@ -1399,7 +1579,7 @@ function renderLanc(){
       <td>${lancBadge(l.status)}</td>
       <td style="font-size:12px;font-family:var(--mono);color:var(--text-muted)">${l.nf||'—'}</td>
       <td style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-        <button class="btn btn-ghost btn-sm" onclick="gerarRecibo(${l.id})" style="font-size:12px;gap:4px;white-space:nowrap">🧾 Recibo</button>
+        ${l.status==='recebido'||!l.status?`<button class="btn btn-ghost btn-sm" onclick="gerarRecibo(${l.id})" style="font-size:12px;gap:4px;white-space:nowrap">🧾 Recibo</button>`:''}
         <button class="btn btn-ghost btn-sm" onclick="abrirComprovante(${l.id})" style="font-size:12px;gap:4px;white-space:nowrap">
           ${l.comprovante ? '📎 Comprov.' : '💬 Confirmar'}
         </button>
@@ -1519,6 +1699,18 @@ const _origOpen = openModal;
 // patch openModal to reset upload state on modal-nf
 const _patchedOpen = openModal;
 function openModal(id) {
+  if (id === 'modal-pedido') {
+    document.getElementById('ped-id').value = '';
+    document.getElementById('ped-modal-title').textContent = 'Novo pedido';
+    document.getElementById('ped-save-btn').textContent = 'Salvar pedido';
+    ['ped-valor','ped-desc'].forEach(f=>document.getElementById(f).value='');
+    document.getElementById('ped-data').value = new Date().toISOString().split('T')[0];
+    document.getElementById('ped-status').value = 'pendente';
+    // Fill all clients (including avulso)
+    document.getElementById('ped-cli').innerHTML = DB.clientes.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('');
+    document.getElementById('modal-pedido').style.display = 'flex';
+    return;
+  }
   if (id === 'modal-cli') {
     // Reset to "new" mode
     document.getElementById('c-id').value='';
@@ -2100,6 +2292,137 @@ function copiarTexto(txt) {
     el.select(); document.execCommand('copy');
     document.body.removeChild(el); toast('📋 Copiado!');
   });
+}
+
+
+// =========================================
+// PEDIDOS (avulsos sem NF)
+// =========================================
+let pedFiltText = '', pedFiltStatus = '';
+
+function filterPedidos(v) { pedFiltText = v.toLowerCase(); renderPedidos(); }
+function filterPedidoStatus(v) { pedFiltStatus = v; renderPedidos(); }
+
+function renderPedidos() {
+  const f = DB.pedidos.filter(p =>
+    (cNome(p.cId).toLowerCase().includes(pedFiltText) || (p.desc||'').toLowerCase().includes(pedFiltText)) &&
+    (!pedFiltStatus || p.status === pedFiltStatus)
+  );
+
+  const totPago = f.filter(p=>p.status==='pago').reduce((s,p)=>s+Number(p.valor),0);
+  const totPend = f.filter(p=>p.status==='pendente').reduce((s,p)=>s+Number(p.valor),0);
+  const pedBadge = document.getElementById('pedidos-badge');
+  const nPend = DB.pedidos.filter(p=>p.status==='pendente').length;
+  if(pedBadge){pedBadge.textContent=nPend;pedBadge.style.display=nPend?'':'none';}
+
+  document.getElementById('pedidos-metrics').innerHTML = `
+    <div class="metric-card"><div class="metric-label">Recebido (filtro)</div><div class="metric-value" style="color:var(--success);font-size:22px">${fmt(totPago)}</div><div class="metric-sub">${f.filter(p=>p.status==='pago').length} pago(s)</div></div>
+    <div class="metric-card"><div class="metric-label">Pendente (filtro)</div><div class="metric-value" style="color:var(--warning);font-size:22px">${fmt(totPend)}</div><div class="metric-sub">${f.filter(p=>p.status==='pendente').length} pendente(s)</div></div>
+  `;
+
+  const statusMap = {
+    pago:      ['success','✅ Pago'],
+    pendente:  ['warning','⏳ Pendente'],
+    cancelado: ['danger', '❌ Cancelado'],
+  };
+
+  document.getElementById('pedidos-table').innerHTML = f.length ? f.map(p => {
+    const [cls, lbl] = statusMap[p.status] || ['info', p.status];
+    return `<tr>
+      <td style="font-weight:500">${cNome(p.cId)}</td>
+      <td style="font-size:13px;color:var(--text-muted)">${p.desc||'—'}</td>
+      <td class="td-mono" style="color:var(--success)">${fmt(p.valor)}</td>
+      <td>${fd(p.data)}</td>
+      <td>
+        <select onchange="updPedidoStatus(${p.id},this.value)" style="margin:0;padding:4px 8px;font-size:12px;width:auto">
+          ${['pendente','pago','cancelado'].map(s=>`<option value="${s}" ${p.status===s?'selected':''}>${s.charAt(0).toUpperCase()+s.slice(1)}</option>`).join('')}
+        </select>
+      </td>
+      <td style="display:flex;gap:6px;align-items:center">
+        ${p.status==='pago'?`<button class="btn btn-ghost btn-sm" onclick="gerarReciboPedido(${p.id})" style="font-size:12px">🧾 Recibo</button>`:''}
+        <button class="btn btn-ghost btn-sm" onclick="editarPedido(${p.id})" style="font-size:12px">✏</button>
+        <button class="btn-icon" onclick="delPedido(${p.id})">✕</button>
+      </td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">🛒</div><div class="empty-title">Nenhum pedido</div><div class="empty-desc">Adicione serviços avulsos aqui</div></div></td></tr>`;
+}
+
+async function salvarPedido() {
+  const editId = document.getElementById('ped-id').value;
+  const cId = parseInt(document.getElementById('ped-cli').value);
+  const valor = parseFloat(document.getElementById('ped-valor').value);
+  const desc = document.getElementById('ped-desc').value.trim();
+  const data = document.getElementById('ped-data').value;
+  const status = document.getElementById('ped-status').value;
+  if (!cId || !valor || !desc) { toast('⚠ Preencha os campos obrigatórios','warn'); return; }
+
+  const row = { cliente_id:cId, valor, descricao:desc, data, status };
+
+  if (editId) {
+    if (sb&&!SUPA_URL.includes('COLE')) await sb.from('pedidos').update(row).eq('id',editId);
+    const idx = DB.pedidos.findIndex(p=>p.id==editId);
+    if(idx>-1) DB.pedidos[idx] = {...DB.pedidos[idx], cId, valor, desc, data, status};
+    toast('✓ Pedido atualizado!');
+  } else {
+    if (sb&&!SUPA_URL.includes('COLE')) {
+      const {data:d,error} = await sb.from('pedidos').insert(row).select().single();
+      if(error){toast('⚠ Erro: '+error.message,'err');return;}
+      DB.pedidos.unshift({id:d.id,cId:d.cliente_id,desc:d.descricao,valor:d.valor,data:d.data,status:d.status});
+    } else {
+      const id = DB.pedidos.length?Math.max(...DB.pedidos.map(p=>p.id))+1:1;
+      DB.pedidos.unshift({id,cId,desc,valor,data,status});
+      save(null,null);
+    }
+    toast('✓ Pedido registrado!');
+  }
+  closeModal('modal-pedido');
+  renderPedidos(); renderDash();
+  ['ped-id','ped-valor','ped-desc','ped-data'].forEach(id=>document.getElementById(id).value='');
+}
+
+function editarPedido(id) {
+  const p = DB.pedidos.find(x=>x.id==id);
+  if(!p) return;
+  document.getElementById('ped-id').value = p.id;
+  document.getElementById('ped-valor').value = p.valor;
+  document.getElementById('ped-desc').value = p.desc||'';
+  document.getElementById('ped-data').value = p.data||'';
+  document.getElementById('ped-status').value = p.status||'pendente';
+  // fill select and set client
+  const sel = document.getElementById('ped-cli');
+  sel.innerHTML = DB.clientes.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('');
+  sel.value = p.cId;
+  document.getElementById('ped-modal-title').textContent = 'Editar pedido';
+  document.getElementById('ped-save-btn').textContent = 'Salvar alterações';
+  document.getElementById('modal-pedido').style.display = 'flex';
+}
+
+async function updPedidoStatus(id, status) {
+  const p = DB.pedidos.find(x=>x.id==id);
+  if(!p) return;
+  p.status = status;
+  if(sb&&!SUPA_URL.includes('COLE')) await sb.from('pedidos').update({status}).eq('id',id);
+  else save(null,null);
+  renderPedidos(); renderDash(); toast('✓ Status atualizado');
+}
+
+async function delPedido(id) {
+  if(!confirm('Remover este pedido?')) return;
+  if(sb&&!SUPA_URL.includes('COLE')) await sb.from('pedidos').delete().eq('id',id);
+  DB.pedidos = DB.pedidos.filter(p=>p.id!==id);
+  save(null,null); renderPedidos(); renderDash(); toast('Pedido removido','warn');
+}
+
+function gerarReciboPedido(pedId) {
+  const p = DB.pedidos.find(x=>x.id==pedId);
+  if(!p || p.status!=='pago') { toast('⚠ Pedido precisa estar pago para gerar recibo','warn'); return; }
+  // Reuse existing gerarRecibo logic by building a fake lanc object
+  const fakeLanc = { id: pedId, cId: p.cId, valor: p.valor, data: p.data, desc: p.desc, nf: null };
+  // temporarily add to DB.lancs for the recibo function
+  const prev = DB.lancs;
+  DB.lancs = [...DB.lancs, fakeLanc];
+  gerarRecibo(pedId);
+  DB.lancs = prev;
 }
 
 </script>
