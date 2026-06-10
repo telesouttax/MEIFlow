@@ -285,20 +285,21 @@ function preencherDadosEmissao(cId) {
 }
 
 function abrirGovBr() {
+  // Open immediately on click — must be first to avoid popup blocker
+  const win = window.open('https://www.nfse.gov.br/EmissorNacional/DPS/Pessoas', '_blank');
+  if (!win) { toast('⚠ Permita popups para este site nas configurações do navegador', 'warn'); return; }
+
   const cId = document.getElementById('em-cliente').value;
   const valor = document.getElementById('em-valor').value;
   const desc = document.getElementById('em-desc').value;
 
   if (!cId || !valor || !desc) {
-    toast('⚠ Preencha cliente, valor e descrição', 'warn');
+    toast('⚠ Preencha cliente, valor e descrição para ver o resumo', 'warn');
     return;
   }
 
   const c = DB.clientes.find(x => x.id == cId);
   const competencia = document.getElementById('em-competencia').value;
-  const aliquota = document.getElementById('em-aliquota').value || '2';
-
-  window.open('https://www.nfse.gov.br/EmissorNacional/DPS/Pessoas', '_blank');
 
   const c2 = DB.clientes.find(x => x.id == cId);
   const compFormatado = competencia ? competencia.split('-').reverse().join('/') : '—';
@@ -2035,49 +2036,6 @@ function preencherDadosEmissao(cId) {
       ${c.cnpj ? `<div><div style="font-size:11px;color:var(--text-muted)">CNPJ/CPF</div><div style="font-weight:500">${c.cnpj}</div></div>` : ''}
       ${c.email ? `<div><div style="font-size:11px;color:var(--text-muted)">E-mail</div><div style="font-weight:500">${c.email}</div></div>` : ''}
     </div>`;
-}
-
-function abrirGovBr() {
-  const cId = document.getElementById('em-cliente').value;
-  const valor = document.getElementById('em-valor').value;
-  const desc = document.getElementById('em-desc').value;
-
-  if (!cId || !valor || !desc) {
-    toast('⚠ Preencha cliente, valor e descrição', 'warn');
-    return;
-  }
-
-  const c = DB.clientes.find(x => x.id == cId);
-  const competencia = document.getElementById('em-competencia').value;
-  const aliquota = document.getElementById('em-aliquota').value || '2';
-
-  window.open('https://www.nfse.gov.br/EmissorNacional/DPS/Pessoas', '_blank');
-
-  const c2 = DB.clientes.find(x => x.id == cId);
-  const compFormatado = competencia ? competencia.split('-').reverse().join('/') : '—';
-
-  // Build copy-friendly summary
-  function copyRow(label, value, fieldId) {
-    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:.5rem 0;border-bottom:1px solid rgba(124,58,237,.1)">
-      <div>
-        <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">${label}</div>
-        <div style="font-weight:500;margin-top:1px">${value}</div>
-      </div>
-      <button onclick="copiarTexto('${value.replace(/'/g,"\'")}')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--purple-ultra);cursor:pointer;font-size:11px;padding:3px 8px;flex-shrink:0;margin-left:8px">📋 Copiar</button>
-    </div>`;
-  }
-
-  const infoHtml =
-    copyRow('Pág. 1 — Data de competência', compFormatado) +
-    (c2 && c2.nome ? copyRow('Pág. 2 — Tomador (razão social)', c2.nome) : '') +
-    (c2 && c2.cnpj ? copyRow('Pág. 2 — CNPJ/CPF do tomador', c2.cnpj) : '') +
-    copyRow('Pág. 2 — Cód. tributação nacional', '17.02.04') +
-    copyRow('Pág. 2 — Descrição do serviço', desc) +
-    copyRow('Pág. 3 — Valor do serviço', 'R$ ' + parseFloat(valor).toLocaleString('pt-BR',{minimumFractionDigits:2}));
-
-  document.getElementById('em-tomador-wrap').style.display = 'block';
-  document.getElementById('em-tomador-info').innerHTML = infoHtml;
-  toast('🏛 gov.br aberto! Use o resumo abaixo para copiar os dados.');
 }
 
 async function registrarNFAposEmissao() {
