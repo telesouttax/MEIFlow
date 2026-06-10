@@ -216,20 +216,12 @@ function verExtrato(cId) {
 }
 
 function copiarLinkExtrato() {
-  const base = window.location.href.replace('meiflow.html','');
-  const link = base + 'extrato.html?id=' + extratoClienteId;
+  const link = getLinkExtrato(extratoClienteId);
   navigator.clipboard.writeText(link).then(() => toast('✓ Link copiado!'));
 }
 
 function compartilharExtrato() {
-  const c = DB.clientes.find(x => x.id == extratoClienteId);
-  const base = window.location.href.replace('meiflow.html','');
-  const link = base + 'extrato.html?id=' + extratoClienteId;
-  const msg = `Olá${c && c.resp ? ', ' + c.resp : ''}! 😊\n\nSegue o link com o seu extrato completo de notas fiscais e pagamentos:\n${link}\n\nQualquer dúvida estou à disposição!`;
-  let tel = c ? (c.tel || '').replace(/\D/g,'') : '';
-  if (tel && !tel.startsWith('55')) tel = '55' + tel;
-  const waUrl = tel ? `https://wa.me/${tel}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
-  window.open(waUrl, '_blank');
+  enviarLinkWhats(extratoClienteId);
 }
 
 
@@ -1241,6 +1233,8 @@ function renderCli(){
       <td style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${badge(c.status)}<span style="font-size:10px;padding:2px 7px;border-radius:20px;font-weight:600;${c.emiteNF===false||c.emiteNF==='nao'?'background:rgba(139,138,170,.1);color:var(--text-dim);border:1px solid var(--border)':'background:rgba(124,58,237,.1);color:var(--purple-ultra);border:1px solid var(--border)'};">${c.emiteNF===false||c.emiteNF==='nao'?'Sem NF':'NF'}</span></td>
       <td style="display:flex;gap:6px;align-items:center">
         <button class="btn btn-ghost btn-sm" onclick="verExtrato(${c.id})" style="font-size:12px">📊 Extrato</button>
+        <button class="btn btn-ghost btn-sm" onclick="copiarLinkCliente(${c.id},'${c.nome.replace(/'/g,'\'')}')" style="font-size:12px" title="Copiar link do extrato">🔗 Link</button>
+        <button class="btn btn-ghost btn-sm" onclick="enviarLinkWhats(${c.id})" style="font-size:12px;color:#25D366" title="Enviar link por WhatsApp">💬 WhatsApp</button>
         ${c.emiteNF!==false?`<button class="btn btn-ghost btn-sm" onclick="abrirEmissaoNF(${c.id})" style="font-size:12px;color:var(--purple-ultra)">📝 Emitir NF</button>`:''}
         <button class="btn btn-ghost btn-sm" onclick="editarCli(${c.id})" style="font-size:12px">✏ Editar</button>
         <button class="btn-icon" onclick="delCli(${c.id})">✕</button>
@@ -1561,6 +1555,33 @@ function openModal(id) {
     if(nfInput) nfInput.value='';
   }
   document.getElementById(id).style.display = 'flex';
+}
+
+// LINKS DOS CLIENTES
+function getLinkExtrato(cId) {
+  const base = window.location.href.replace('meiflow.html','').replace(/\/$/, '');
+  return base + '/extrato.html?id=' + cId;
+}
+
+function copiarLinkCliente(cId, nome) {
+  const link = getLinkExtrato(cId);
+  navigator.clipboard.writeText(link).then(() => {
+    toast('✓ Link de ' + nome + ' copiado!');
+  }).catch(() => {
+    prompt('Copie o link do extrato de ' + nome + ':', link);
+  });
+}
+
+function enviarLinkWhats(cId) {
+  const c = DB.clientes.find(x => x.id == cId);
+  if (!c) return;
+  const link = getLinkExtrato(cId);
+  const nome = c.resp || c.nome;
+  const msg = `Olá, ${nome}! 😊\n\nSegue o link com o seu extrato completo — notas fiscais e pagamentos:\n${link}\n\nQualquer dúvida estou à disposição!`;
+  let tel = (c.tel||'').replace(/\D/g,'');
+  if (tel && !tel.startsWith('55')) tel = '55' + tel;
+  const url = tel ? `https://wa.me/${tel}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+  window.open(url, '_blank');
 }
 
 // LINK DE CADASTRO
@@ -1970,20 +1991,12 @@ function verExtrato(cId) {
 }
 
 function copiarLinkExtrato() {
-  const base = window.location.href.replace('meiflow.html','');
-  const link = base + 'extrato.html?id=' + extratoClienteId;
+  const link = getLinkExtrato(extratoClienteId);
   navigator.clipboard.writeText(link).then(() => toast('✓ Link copiado!'));
 }
 
 function compartilharExtrato() {
-  const c = DB.clientes.find(x => x.id == extratoClienteId);
-  const base = window.location.href.replace('meiflow.html','');
-  const link = base + 'extrato.html?id=' + extratoClienteId;
-  const msg = `Olá${c && c.resp ? ', ' + c.resp : ''}! 😊\n\nSegue o link com o seu extrato completo de notas fiscais e pagamentos:\n${link}\n\nQualquer dúvida estou à disposição!`;
-  let tel = c ? (c.tel || '').replace(/\D/g,'') : '';
-  if (tel && !tel.startsWith('55')) tel = '55' + tel;
-  const waUrl = tel ? `https://wa.me/${tel}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
-  window.open(waUrl, '_blank');
+  enviarLinkWhats(extratoClienteId);
 }
 
 
