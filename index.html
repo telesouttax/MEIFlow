@@ -494,7 +494,7 @@ tr:hover td{background:rgba(124,58,237,.04);}
       <div class="toolbar">
         <div class="search-wrap"><span class="search-icon">🔍</span><input type="text" placeholder="Buscar cliente..." oninput="filterCli(this.value)"></div>
       </div>
-      <div class="card"><div class="table-wrap"><table><thead><tr><th>Nome / Empresa</th><th>Contato</th><th>Valor mensal</th><th>Dia pgto</th><th>Status</th><th></th></tr></thead><tbody id="cli-table"></tbody></table></div></div>
+      <div class="card"><div class="table-wrap"><table><thead><tr><th>Nome / Empresa</th><th>Contato</th><th>Contrato</th><th>Valor / Pgto</th><th>Status</th><th></th></tr></thead><tbody id="cli-table"></tbody></table></div></div>
     </section>
 
     <!-- NOTAS -->
@@ -561,15 +561,31 @@ tr:hover td{background:rgba(124,58,237,.04);}
         <option value="nao">Não — sem nota fiscal</option>
       </select>
     </div>
-    <div class="form-row">
-      <div class="form-group"><label>Valor mensal (R$) *</label><input type="number" id="c-valor" placeholder="800"></div>
+    <div class="form-group">
+      <label>Tipo de contrato</label>
+      <select id="c-tipo-contrato" onchange="toggleContratoFields(this.value)">
+        <option value="recorrente">Recorrente — valor fixo mensal</option>
+        <option value="avulso">Avulso — por projeto ou entrega</option>
+      </select>
+    </div>
+    <div id="campos-recorrente">
+      <div class="form-row">
+        <div class="form-group"><label>Valor mensal (R$)</label><input type="number" id="c-valor" placeholder="800"></div>
+        <div class="form-group">
+          <label>Dia de pagamento</label>
+          <select id="c-dia-tipo" onchange="toggleDiaField(this.value)" style="margin-bottom:6px">
+            <option value="fixo">Dia fixo do mês</option>
+            <option value="demanda">Sob demanda</option>
+          </select>
+          <input type="number" id="c-dia" placeholder="Ex: 10" min="1" max="31" style="display:block">
+        </div>
+      </div>
+    </div>
+    <div id="campos-avulso" style="display:none">
       <div class="form-group">
-        <label>Dia de pagamento</label>
-        <select id="c-dia-tipo" onchange="toggleDiaField(this.value)" style="margin-bottom:6px">
-          <option value="fixo">Dia fixo do mês</option>
-          <option value="demanda">Sob demanda — pago ao finalizar</option>
-        </select>
-        <input type="number" id="c-dia" placeholder="Ex: 10" min="1" max="31" style="display:block">
+        <label>Valor médio por projeto (R$)</label>
+        <input type="number" id="c-valor-avulso" placeholder="Ex: 150">
+        <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Referência — o valor real é definido em cada lançamento</div>
       </div>
     </div>
     <div class="form-group"><label>Status</label>
@@ -778,7 +794,7 @@ async function dbLoad() {
       sb.from('notas').select('*').order('created_at'),
       sb.from('lancamentos').select('*').order('data'),
     ]);
-    DB.clientes = (c.data||[]).map(x=>({id:x.id,nome:x.nome,resp:x.responsavel,email:x.email,tel:x.telefone,cnpj:x.cnpj,valor:x.valor_mensal,dia:x.dia_pagamento,diaTipo:x.dia_tipo||'fixo',servico:x.servico,status:x.status||'pendente',emiteNF:x.emite_nf!==false}));
+    DB.clientes = (c.data||[]).map(x=>({id:x.id,nome:x.nome,resp:x.responsavel,email:x.email,tel:x.telefone,cnpj:x.cnpj,valor:x.valor_mensal,dia:x.dia_pagamento,diaTipo:x.dia_tipo||'fixo',tipoContrato:x.tipo_contrato||'recorrente',servico:x.servico,status:x.status||'pendente',emiteNF:x.emite_nf!==false}));
     DB.notas    = (n.data||[]).map(x=>({id:x.id,num:x.numero,cId:x.cliente_id,desc:x.descricao,valor:x.valor,emissao:x.data_emissao,venc:x.data_vencimento,status:x.status,anexo:x.anexo_url,anexoNome:x.anexo_nome,anexoTipo:x.anexo_tipo}));
     DB.lancs    = (l.data||[]).map(x=>({id:x.id,cId:x.cliente_id,desc:x.descricao,valor:x.valor,data:x.data,nf:x.nf_numero,status:x.status_pgto||'recebido',comprovante:x.comprovante_url,comprovanteNome:x.comprovante_nome,comprovanteTipo:x.comprovante_tipo}));
   } catch(e) { console.error('Supabase load error', e); }
@@ -895,7 +911,7 @@ function getAlerts(){
     else if(diff<=5)arr.push({cli:cNome(n.cId),detail:`Vence em ${diff} dia(s) · NF ${n.num}`,valor:n.valor,cls:diff<=2?'urgent':'soon'});
   });
   DB.clientes.filter(c=>c.status==='ativo').forEach(c=>{
-    if(c.diaTipo==='demanda'||!c.dia) return;
+    if(c.tipoContrato==='avulso'||c.diaTipo==='demanda'||!c.dia) return;
     const d=today.getDate(),diff=c.dia-d;
     if(diff>=0&&diff<=5){
       const has=DB.notas.some(n=>n.cId===c.id&&new Date(n.emissao).getMonth()===today.getMonth()&&new Date(n.emissao).getFullYear()===today.getFullYear());
@@ -967,8 +983,12 @@ function renderCli(){
     <tr>
       <td><div style="font-weight:500">${c.nome}</div><div style="font-size:12px;color:var(--text-muted)">${c.cnpj||'—'}</div></td>
       <td><div>${c.resp||'—'}</div><div style="font-size:12px;color:var(--text-muted)">${c.email||'—'}</div></td>
-      <td class="td-mono" style="color:var(--purple-ultra)">${fmt(c.valor||0)}</td>
-      <td><span style="font-family:var(--mono);font-size:13px">${c.diaTipo==='demanda'?'Sob demanda':c.dia?'Dia '+c.dia:'—'}</span></td>
+      <td>
+        <span style="font-size:11px;padding:2px 8px;border-radius:20px;font-weight:600;${c.tipoContrato==='avulso'?'background:rgba(239,159,39,.1);color:#EF9F27;border:1px solid rgba(239,159,39,.2)':'background:rgba(124,58,237,.1);color:var(--purple-ultra);border:1px solid var(--border)'}">
+          ${c.tipoContrato==='avulso'?'Avulso':'Recorrente'}
+        </span>
+      </td>
+      <td><span style="font-family:var(--mono);font-size:13px">${c.tipoContrato==='avulso'?(c.valor?fmt(c.valor)+'/proj':'Por projeto'):(c.diaTipo==='demanda'?'Sob demanda':(c.valor?fmt(c.valor)+' · Dia '+(c.dia||'—'):'—'))}</span></td>
       <td style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${badge(c.status)}<span style="font-size:10px;padding:2px 7px;border-radius:20px;font-weight:600;${c.emiteNF===false||c.emiteNF==='nao'?'background:rgba(139,138,170,.1);color:var(--text-dim);border:1px solid var(--border)':'background:rgba(124,58,237,.1);color:var(--purple-ultra);border:1px solid var(--border)'};">${c.emiteNF===false||c.emiteNF==='nao'?'Sem NF':'NF'}</span></td>
       <td style="display:flex;gap:6px;align-items:center">
         <button class="btn btn-ghost btn-sm" onclick="verExtrato(${c.id})" style="font-size:12px">📊 Extrato</button>
@@ -981,12 +1001,15 @@ async function salvarCli(){
   const editId = document.getElementById('c-id').value;
   const isEdit = !!editId;
   const nome=document.getElementById('c-nome').value.trim();
-  const valor=parseFloat(document.getElementById('c-valor').value)||0;
-  const diaTipo=document.getElementById('c-dia-tipo').value;
-  const dia=diaTipo==='demanda'?0:parseInt(document.getElementById('c-dia').value)||0;
+  const tipoContrato=document.getElementById('c-tipo-contrato').value;
+  const valor=tipoContrato==='avulso'
+    ? parseFloat(document.getElementById('c-valor-avulso').value)||0
+    : parseFloat(document.getElementById('c-valor').value)||0;
+  const diaTipo=tipoContrato==='avulso'?'demanda':document.getElementById('c-dia-tipo').value;
+  const dia=diaTipo==='demanda'||tipoContrato==='avulso'?0:parseInt(document.getElementById('c-dia').value)||0;
   if(!nome){toast('⚠ Nome obrigatório','warn');return;}
   const emiteNF=document.getElementById('c-emite-nf').value;
-  const row={nome,responsavel:document.getElementById('c-resp').value,email:document.getElementById('c-email').value,telefone:document.getElementById('c-tel').value,cnpj:document.getElementById('c-cnpj').value,valor_mensal:valor,dia_pagamento:dia,dia_tipo:diaTipo,servico:document.getElementById('c-servico').value,status:document.getElementById('c-status').value,emite_nf:emiteNF==='sim'};
+  const row={nome,responsavel:document.getElementById('c-resp').value,email:document.getElementById('c-email').value,telefone:document.getElementById('c-tel').value,cnpj:document.getElementById('c-cnpj').value,valor_mensal:valor,dia_pagamento:dia,dia_tipo:diaTipo,tipo_contrato:tipoContrato,servico:document.getElementById('c-servico').value,status:document.getElementById('c-status').value,emite_nf:emiteNF==='sim'};
   if(isEdit){
     // UPDATE
     if(sb&&!SUPA_URL.includes('COLE')){
@@ -1010,8 +1033,9 @@ async function salvarCli(){
     }
     closeModal('modal-cli');renderCli();renderDash();toast('✓ Cliente salvo!');
   }
-  ['c-id','c-nome','c-resp','c-email','c-tel','c-cnpj','c-valor','c-dia','c-servico'].forEach(id=>document.getElementById(id).value='');
+  ['c-id','c-nome','c-resp','c-email','c-tel','c-cnpj','c-valor','c-dia','c-servico','c-valor-avulso'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('c-dia-tipo').value='fixo'; toggleDiaField('fixo');
+  document.getElementById('c-tipo-contrato').value='recorrente'; toggleContratoFields('recorrente');
 }
 
 function editarCli(id){
@@ -1024,6 +1048,10 @@ function editarCli(id){
   document.getElementById('c-email').value=c.email||'';
   document.getElementById('c-tel').value=c.tel||'';
   document.getElementById('c-cnpj').value=c.cnpj||'';
+  const tc=c.tipoContrato||'recorrente';
+  document.getElementById('c-tipo-contrato').value=tc;
+  toggleContratoFields(tc);
+  if(tc==='avulso'){document.getElementById('c-valor-avulso').value=c.valor||'';}
   document.getElementById('c-valor').value=c.valor||'';
   const diaTipoVal = c.diaTipo||'fixo';
   document.getElementById('c-dia-tipo').value=diaTipoVal;
@@ -1252,9 +1280,9 @@ function openModal(id) {
     document.getElementById('c-id').value='';
     document.getElementById('c-modal-title').textContent='Novo cliente';
     document.getElementById('c-save-btn').textContent='Salvar cliente';
-    ['c-nome','c-resp','c-email','c-tel','c-cnpj','c-valor','c-dia','c-servico'].forEach(f=>document.getElementById(f).value='');
-    document.getElementById('c-dia-tipo').value='fixo';
-    toggleDiaField('fixo');
+    ['c-nome','c-resp','c-email','c-tel','c-cnpj','c-valor','c-dia','c-servico','c-valor-avulso'].forEach(f=>document.getElementById(f).value='');
+    document.getElementById('c-dia-tipo').value='fixo'; toggleDiaField('fixo');
+    document.getElementById('c-tipo-contrato').value='recorrente'; toggleContratoFields('recorrente');
     document.getElementById('c-status').value='ativo';
     document.getElementById('c-emite-nf').value='sim';
     document.getElementById('modal-cli').style.display='flex';
@@ -1433,6 +1461,21 @@ function enviarWhatsApp() {
   closeModal('modal-comprov');
   renderLanc();
   toast('✓ WhatsApp aberto!');
+}
+
+// Toggle contrato fields
+function toggleContratoFields(tipo) {
+  const rec = document.getElementById('campos-recorrente');
+  const avl = document.getElementById('campos-avulso');
+  const diaField = document.getElementById('c-dia');
+  if (!rec || !avl) return;
+  if (tipo === 'avulso') {
+    rec.style.display = 'none';
+    avl.style.display = 'block';
+  } else {
+    rec.style.display = 'block';
+    avl.style.display = 'none';
+  }
 }
 
 // Toggle dia field
