@@ -1700,8 +1700,11 @@ function init(){
   document.getElementById('dash-date').textContent=new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
   fillMonthFilter();
   renderAll();
-  // Poll for new clients every 30s (catches form submissions)
-  setInterval(async()=>{ await dbLoad(); renderCli(); renderDash(); updateBadge(); }, 30000);
+  // Realtime: poll every 5s — atualiza tudo sem precisar de F5
+  setInterval(async() => {
+    await dbLoad();
+    renderAll();
+  }, 5000);
 }
 
 function renderAll(){renderDash();renderCli();renderNF();renderLanc();renderPedidos();renderAlertas();renderRel();updateBadge();updatePendingBadge();}
