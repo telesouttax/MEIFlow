@@ -9,6 +9,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 :root {
   --black:#080810;--dark:#0e0e1a;--dark2:#13131f;--dark3:#1a1a2e;--dark4:#212138;
@@ -1118,7 +1120,6 @@ function renderPedidos() {
       <td style="display:flex;gap:6px;align-items:center">
         ${p.status==='pago'?`
           <button class="btn btn-ghost btn-sm" onclick="gerarReciboPedido(${p.id})" style="font-size:12px">🧾 Recibo</button>
-          <button class="btn btn-ghost btn-sm" onclick="enviarEmailPedido(${p.id})" style="font-size:12px">📧 E-mail</button>
         `:''}
         <button class="btn btn-ghost btn-sm" onclick="editarPedido(${p.id})" style="font-size:12px">✏</button>
         <button class="btn-icon" onclick="delPedido(${p.id})">✕</button>
@@ -1222,6 +1223,33 @@ async function updPedidoStatus(id, status) {
       save(null,null);
       toast('✓ Pago! Lançamento criado em Lançamentos 🎉');
     }
+
+    // Auto-send email
+    const c = DB.clientes.find(x=>x.id==p.cId);
+    const email = c ? (c.email||'') : '';
+    if(email) {
+      const eData = {
+        email,
+        nome: c ? (c.resp||c.nome) : cNome(p.cId),
+        valor: p.valor,
+        desc: p.desc || 'Serviço avulso',
+        data: p.data || hoje,
+        nf: null,
+        num: String(p.id).padStart(4,'0')
+      };
+      toast('⏳ Gerando recibo e enviando e-mail...');
+      gerarReciboPedido(p.id);
+      await new Promise(r => setTimeout(r, 400));
+      const reciboHtml = document.getElementById('recibo-preview')?.innerHTML;
+      let pdfB64 = null;
+      try { if(reciboHtml) pdfB64 = await htmlParaPDFBase64(reciboHtml); } catch(e){}
+      closeModal('modal-recibo');
+      const assunto = `Recibo de pagamento #${eData.num} — ${PRESTADOR.nome}`;
+      await abrirGmail(email, assunto, buildEmailBody(eData), pdfB64);
+    } else {
+      toast('⚠ Pago! Mas cliente sem e-mail — envie manualmente pela aba Lançamentos', 'warn');
+    }
+
   } else {
     if(!sb||SUPA_URL.includes('COLE')) save(null,null);
     toast('✓ Status atualizado');
@@ -1402,51 +1430,111 @@ async function enviarReciboEmail() {
     if (!email) return;
     d.email = email;
   }
+
+  // Show loading on button
+  const btn = document.querySelector('#modal-recibo .btn-ghost[onclick*="enviarReciboEmail"]');
+  if (btn) { btn.textContent = '⏳ Gerando PDF...'; btn.disabled = true; }
+
   const assunto = `Recibo de pagamento #${d.num} — ${PRESTADOR.nome}`;
   const corpo = buildEmailBody(d);
 
-  // Try to generate PDF from current recibo HTML
+  // Generate PDF from recibo HTML
   const reciboHtml = document.getElementById('recibo-preview')?.innerHTML;
   let pdfB64 = null;
   if (reciboHtml) {
     try {
-      pdfB64 = await htmlParaPDFBase64(reciboHtml, d);
-    } catch(e) { console.warn('PDF gen failed, sending text only'); }
+      toast('⏳ Gerando PDF do recibo...');
+      pdfB64 = await htmlParaPDFBase64(reciboHtml);
+      if (pdfB64) toast('✓ PDF gerado! Enviando...');
+    } catch(e) {
+      console.warn('PDF gen failed:', e);
+      toast('⚠ PDF falhou, enviando em texto', 'warn');
+    }
   }
+
+  if (btn) { btn.textContent = '📧 Enviar por e-mail'; btn.disabled = false; }
 
   await abrirGmail(d.email, assunto, corpo, pdfB64);
 }
 
-async function htmlParaPDFBase64(html, d) {
-  // Use browser print to blob via iframe
-  return new Promise((resolve, reject) => {
+async function htmlParaPDFBase64(html) {
+  // Render recibo HTML to canvas then to PDF using html2canvas + jsPDF
+  return new Promise(async (resolve, reject) => {
     try {
-      const iframe = document.createElement('iframe');
-      iframe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:794px;height:1123px;';
-      document.body.appendChild(iframe);
-      iframe.contentDocument.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
-        <style>body{margin:0;font-family:'Helvetica Neue',Arial,sans-serif;}@page{margin:0;size:A4;}</style>
-        </head><body>${html}</body></html>`);
-      iframe.contentDocument.close();
-      setTimeout(() => {
-        document.body.removeChild(iframe);
-        resolve(null); // Can't get blob without user gesture — send text only
-      }, 100);
-    } catch(e) { reject(e); }
+      // Create a temporary container with white background
+      const container = document.createElement('div');
+      container.style.cssText = 'position:fixed;left:-9999px;top:0;width:794px;background:#fff;z-index:-1;';
+      container.innerHTML = html;
+      document.body.appendChild(container);
+
+      await new Promise(r => setTimeout(r, 200)); // wait for images to load
+
+      const canvas = await html2canvas(container, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        width: 794,
+      });
+
+      document.body.removeChild(container);
+
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: 'a4' });
+
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const imgW = pageW;
+      const imgH = (canvas.height / canvas.width) * imgW;
+
+      // If content is taller than one page, scale to fit
+      if (imgH <= pageH) {
+        pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, imgW, imgH);
+      } else {
+        // Multi-page
+        let yOffset = 0;
+        let remaining = imgH;
+        while (remaining > 0) {
+          const sliceH = Math.min(pageH, remaining);
+          const srcY = yOffset * (canvas.height / imgH);
+          const srcH = sliceH * (canvas.height / imgH);
+
+          const sliceCanvas = document.createElement('canvas');
+          sliceCanvas.width = canvas.width;
+          sliceCanvas.height = srcH;
+          const ctx = sliceCanvas.getContext('2d');
+          ctx.drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, srcH);
+
+          if (yOffset > 0) pdf.addPage();
+          pdf.addImage(sliceCanvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, imgW, sliceH);
+
+          yOffset += sliceH;
+          remaining -= sliceH;
+        }
+      }
+
+      // Get base64 string (without the data:application/pdf;base64, prefix)
+      const pdfBase64 = pdf.output('datauristring').split(',')[1];
+      resolve(pdfBase64);
+
+    } catch(e) {
+      console.error('PDF generation error:', e);
+      resolve(null); // fallback to text-only
+    }
   });
 }
 
-function enviarEmailLanc(lancId) {
+async function enviarEmailLanc(lancId) {
   const l = DB.lancs.find(x => x.id == lancId);
   if (!l) return;
   const c = DB.clientes.find(x => x.id == l.cId);
-  const email = c ? (c.email||'') : '';
+  let email = c ? (c.email||'') : '';
   if (!email) {
-    const e = prompt('E-mail do cliente (não cadastrado):', '');
-    if (!e) return;
+    email = prompt('E-mail do cliente:', '') || '';
+    if (!email) return;
   }
   const data = {
-    email: email || prompt('E-mail do cliente:', '')||'',
+    email,
     nome: c ? (c.resp||c.nome) : cNome(l.cId),
     valor: l.valor,
     desc: l.desc || 'Serviços prestados',
@@ -1454,18 +1542,29 @@ function enviarEmailLanc(lancId) {
     nf: l.nf,
     num: String(l.id).padStart(4,'0')
   };
-  if (!data.email) return;
+  // Generate recibo HTML then PDF
+  toast('⏳ Gerando PDF do recibo...');
+  gerarRecibo(lancId); // renders into recibo-preview
+  await new Promise(r => setTimeout(r, 300));
+  const reciboHtml = document.getElementById('recibo-preview')?.innerHTML;
+  let pdfB64 = null;
+  try { if (reciboHtml) pdfB64 = await htmlParaPDFBase64(reciboHtml); } catch(e) {}
+  closeModal('modal-recibo');
   const assunto = `Recibo de pagamento #${data.num} — ${PRESTADOR.nome}`;
-  abrirGmail(data.email, assunto, buildEmailBody(data));
+  await abrirGmail(data.email, assunto, buildEmailBody(data), pdfB64);
 }
 
-function enviarEmailPedido(pedId) {
+async function enviarEmailPedido(pedId) {
   const p = DB.pedidos.find(x => x.id == pedId);
   if (!p || p.status !== 'pago') return;
   const c = DB.clientes.find(x => x.id == p.cId);
-  const email = c ? (c.email||'') : '';
+  let email = c ? (c.email||'') : '';
+  if (!email) {
+    email = prompt('E-mail do cliente:', '') || '';
+    if (!email) return;
+  }
   const data = {
-    email: email || prompt('E-mail do cliente:', '')||'',
+    email,
     nome: c ? (c.resp||c.nome) : cNome(p.cId),
     valor: p.valor,
     desc: p.desc || 'Serviço avulso',
@@ -1473,9 +1572,16 @@ function enviarEmailPedido(pedId) {
     nf: null,
     num: String(p.id).padStart(4,'0')
   };
-  if (!data.email) return;
+  // Generate recibo then PDF
+  toast('⏳ Gerando PDF do recibo...');
+  gerarReciboPedido(pedId);
+  await new Promise(r => setTimeout(r, 300));
+  const reciboHtml = document.getElementById('recibo-preview')?.innerHTML;
+  let pdfB64 = null;
+  try { if (reciboHtml) pdfB64 = await htmlParaPDFBase64(reciboHtml); } catch(e) {}
+  closeModal('modal-recibo');
   const assunto = `Recibo de pagamento #${data.num} — ${PRESTADOR.nome}`;
-  abrirGmail(data.email, assunto, buildEmailBody(data));
+  await abrirGmail(data.email, assunto, buildEmailBody(data), pdfB64);
 }
 
 
@@ -1811,10 +1917,79 @@ function renderNF(){
 async function updNFStatus(id,s){
   const n=DB.notas.find(n=>n.id===id);
   if(!n) return;
+  const prevStatus = n.status;
   n.status=s;
   if(sb&&!SUPA_URL.includes('COLE')) await sb.from('notas').update({status:s}).eq('id',id);
   else save(null,null);
-  renderDash();renderAlertas();updateBadge();toast('✓ Status atualizado');
+  renderDash();renderAlertas();updateBadge();renderNF();toast('✓ Status atualizado');
+
+  // Auto-create lançamento + send email when marked as paga
+  if(s==='paga' && prevStatus!=='paga') {
+    const c = DB.clientes.find(x=>x.id==n.cId);
+    const hoje = new Date().toISOString().split('T')[0];
+
+    // 1. Create lançamento automatically
+    const lancRow = {
+      cliente_id: n.cId,
+      descricao: n.desc || 'Pagamento NF ' + n.num,
+      valor: n.valor,
+      data: hoje,
+      nf_numero: 'NF ' + n.num,
+      status_pgto: 'recebido'
+    };
+    if(sb&&!SUPA_URL.includes('COLE')) {
+      const {data:ld, error:eLanc} = await sb.from('lancamentos').insert(lancRow).select().single();
+      if(eLanc) {
+        toast('⚠ Erro ao criar lançamento: '+eLanc.message,'err');
+      } else {
+        DB.lancs.push({
+          id:ld.id, cId:ld.cliente_id, desc:ld.descricao,
+          valor:ld.valor, data:ld.data, nf:ld.nf_numero,
+          status:'recebido', comprovante:null,
+          comprovanteNome:null, comprovanteTipo:null
+        });
+        toast('✓ NF paga! Lançamento criado automaticamente 🎉');
+      }
+    } else {
+      const lid = DB.lancs.length ? Math.max(...DB.lancs.map(l=>l.id))+1 : 1;
+      DB.lancs.push({id:lid, cId:n.cId, desc:lancRow.descricao,
+        valor:n.valor, data:hoje, nf:'NF '+n.num,
+        status:'recebido', comprovante:null,
+        comprovanteNome:null, comprovanteTipo:null});
+      save(null,null);
+      toast('✓ NF paga! Lançamento criado automaticamente 🎉');
+    }
+    renderLanc();
+
+    // 2. Auto-send email
+    const email = c ? (c.email||'') : '';
+    if(!email) {
+      toast('⚠ Cliente sem e-mail — envie o recibo manualmente pela aba Lançamentos', 'warn');
+      return;
+    }
+    const eData = {
+      email,
+      nome: c ? (c.resp||c.nome) : cNome(n.cId),
+      valor: n.valor,
+      desc: n.desc || 'Serviços prestados',
+      data: hoje,
+      nf: 'NF ' + n.num,
+      num: n.num
+    };
+    toast('⏳ Gerando recibo e enviando e-mail...');
+    const fakeLanc = { id: n.id, cId: n.cId, valor: n.valor, data: hoje, desc: n.desc, nf: 'NF '+n.num };
+    const prevLancs = DB.lancs;
+    DB.lancs = [...DB.lancs, fakeLanc];
+    gerarRecibo(n.id);
+    DB.lancs = prevLancs;
+    await new Promise(r => setTimeout(r, 400));
+    const reciboHtml = document.getElementById('recibo-preview')?.innerHTML;
+    let pdfB64 = null;
+    try { if(reciboHtml) pdfB64 = await htmlParaPDFBase64(reciboHtml); } catch(e){}
+    closeModal('modal-recibo');
+    const assunto = `Recibo de pagamento — NF ${n.num} — ${PRESTADOR.nome}`;
+    await abrirGmail(email, assunto, buildEmailBody(eData), pdfB64);
+  }
 }
 async function salvarNF(){
   const num=document.getElementById('n-num').value.trim();
@@ -2633,7 +2808,6 @@ function renderPedidos() {
       <td style="display:flex;gap:6px;align-items:center">
         ${p.status==='pago'?`
           <button class="btn btn-ghost btn-sm" onclick="gerarReciboPedido(${p.id})" style="font-size:12px">🧾 Recibo</button>
-          <button class="btn btn-ghost btn-sm" onclick="enviarEmailPedido(${p.id})" style="font-size:12px">📧 E-mail</button>
         `:''}
         <button class="btn btn-ghost btn-sm" onclick="editarPedido(${p.id})" style="font-size:12px">✏</button>
         <button class="btn-icon" onclick="delPedido(${p.id})">✕</button>
@@ -2737,6 +2911,33 @@ async function updPedidoStatus(id, status) {
       save(null,null);
       toast('✓ Pago! Lançamento criado em Lançamentos 🎉');
     }
+
+    // Auto-send email
+    const c = DB.clientes.find(x=>x.id==p.cId);
+    const email = c ? (c.email||'') : '';
+    if(email) {
+      const eData = {
+        email,
+        nome: c ? (c.resp||c.nome) : cNome(p.cId),
+        valor: p.valor,
+        desc: p.desc || 'Serviço avulso',
+        data: p.data || hoje,
+        nf: null,
+        num: String(p.id).padStart(4,'0')
+      };
+      toast('⏳ Gerando recibo e enviando e-mail...');
+      gerarReciboPedido(p.id);
+      await new Promise(r => setTimeout(r, 400));
+      const reciboHtml = document.getElementById('recibo-preview')?.innerHTML;
+      let pdfB64 = null;
+      try { if(reciboHtml) pdfB64 = await htmlParaPDFBase64(reciboHtml); } catch(e){}
+      closeModal('modal-recibo');
+      const assunto = `Recibo de pagamento #${eData.num} — ${PRESTADOR.nome}`;
+      await abrirGmail(email, assunto, buildEmailBody(eData), pdfB64);
+    } else {
+      toast('⚠ Pago! Mas cliente sem e-mail — envie manualmente pela aba Lançamentos', 'warn');
+    }
+
   } else {
     if(!sb||SUPA_URL.includes('COLE')) save(null,null);
     toast('✓ Status atualizado');
