@@ -1290,12 +1290,13 @@ const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.send';
 let gmailToken = null;
 
 function buildEmailBody(data) {
-  // Generate extrato link directly here — garantindo que o ID está correto
+  // Use pre-computed extratoLink first, then fallback to clienteId
+  // Never show the link if it contains "undefined" or "null"
   let extratoLink = null;
-  if (data.clienteId !== undefined && data.clienteId !== null && data.clienteId !== '') {
-    extratoLink = getLinkExtrato(data.clienteId);
-  } else if (data.extratoLink) {
+  if (data.extratoLink && !String(data.extratoLink).includes('undefined') && !String(data.extratoLink).includes('null')) {
     extratoLink = data.extratoLink;
+  } else if (data.clienteId && String(data.clienteId) !== 'undefined' && String(data.clienteId) !== 'null') {
+    extratoLink = 'https://mei-flow-orpin.vercel.app/extrato.html?id=' + data.clienteId;
   }
   return `Olá, ${data.nome}!
 
@@ -2241,12 +2242,8 @@ function openModal(id) {
 
 // LINKS DOS CLIENTES
 function getLinkExtrato(cId) {
-  // Monta URL base removendo o arquivo atual (ex: /meiflow.html)
-  const href = window.location.href;
-  const base = href.includes('meiflow.html')
-    ? href.substring(0, href.lastIndexOf('/'))
-    : href.replace(/\/$/, '');
-  return base + '/extrato.html?id=' + cId;
+  if (!cId || cId === 'undefined' || cId === 'null') return null;
+  return 'https://mei-flow-orpin.vercel.app/extrato.html?id=' + cId;
 }
 
 function copiarLinkCliente(cId, nome) {
