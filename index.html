@@ -1288,7 +1288,7 @@ const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.send';
 let gmailToken = null;
 
 function buildEmailBody(data) {
-  const extratoLink = data.clienteId ? getLinkExtrato(data.clienteId) : null;
+  const extratoLink = (data.clienteId !== undefined && data.clienteId !== null) ? getLinkExtrato(data.clienteId) : null;
   return `Olá, ${data.nome}!
 
 Passando para confirmar que recebemos o seu pagamento com sucesso. Segue o recibo em anexo (PDF).
@@ -2230,8 +2230,9 @@ function openModal(id) {
 
 // LINKS DOS CLIENTES
 function getLinkExtrato(cId) {
-  const base = window.location.href.replace('meiflow.html','').replace(/\/$/, '');
-  return base + '/extrato.html?id=' + cId;
+  const origin = window.location.origin;
+  const path = window.location.pathname.replace(/\/[^/]*$/, '');
+  return origin + path + '/extrato.html?id=' + cId;
 }
 
 function copiarLinkCliente(cId, nome) {
