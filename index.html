@@ -730,7 +730,6 @@ function gerarRecibo(lancId) {
     nf: l.nf,
     num: String(lancId).padStart(4,'0')
   };
-  const c = DB.clientes.find(x => x.id == l.cId);
   const nf = DB.notas.find(n => l.nf && n.num === l.nf.replace('NF ',''));
   const dataFmt = fd(l.data);
   const num = String(lancId).padStart(4,'0');
@@ -2270,21 +2269,13 @@ document.head.appendChild(spinStyle);
 // =========================================
 // DADOS DO PRESTADOR — edite aqui
 // =========================================
-const PRESTADOR = {
-  nome: 'Lucas Teles',
-  cnpj: '66.888.248/0001-49',
-  pix: '(21) 96019-4636',
-  pixTipo: 'Telefone',
-  email: 'lucas.teles@outtax.com.br',
-};
+
 // =========================================
 
 // =========================================
 // RECIBO PDF
 // =========================================
-let reciboLancId = null;
 
-let reciboEmailData = null; // stores {email, nome, valor, desc, data, num}
 
 function gerarRecibo(lancId) {
   const l = DB.lancs.find(x => x.id == lancId);
@@ -2301,7 +2292,6 @@ function gerarRecibo(lancId) {
     nf: l.nf,
     num: String(lancId).padStart(4,'0')
   };
-  const c = DB.clientes.find(x => x.id == l.cId);
   const nf = DB.notas.find(n => l.nf && n.num === l.nf.replace('NF ',''));
   const dataFmt = fd(l.data);
   const num = String(lancId).padStart(4,'0');
@@ -2406,7 +2396,6 @@ function imprimirRecibo() {
 // =========================================
 // EXTRATO DO CLIENTE
 // =========================================
-let extratoClienteId = null;
 
 function verExtrato(cId) {
   const c = DB.clientes.find(x => x.id == cId);
@@ -2500,7 +2489,6 @@ function compartilharExtrato() {
 // =========================================
 // EMISSÃO NF — GOV.BR
 // =========================================
-let emissaoClienteId = null;
 
 function abrirEmissaoNF(cId) {
   // Fill client selector
@@ -2603,7 +2591,6 @@ function copiarTexto(txt) {
 // =========================================
 // PEDIDOS (avulsos sem NF)
 // =========================================
-let pedFiltText = '', pedFiltStatus = '';
 
 function filterPedidos(v) { pedFiltText = v.toLowerCase(); renderPedidos(); }
 function filterPedidoStatus(v) { pedFiltStatus = v; renderPedidos(); }
