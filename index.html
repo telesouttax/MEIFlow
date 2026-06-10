@@ -298,22 +298,27 @@ function abrirGovBr() {
   const competencia = document.getElementById('em-competencia').value;
   const aliquota = document.getElementById('em-aliquota').value || '2';
 
-  // Build gov.br URL - opens the emissor nacional
-  // We can pass query params that the portal supports
-  const baseUrl = 'https://www.nfse.gov.br/EmissorNacional/NotaFiscal/Emitir';
+  // Abre o portal gov.br na página de emissão
+  // O portal não aceita parâmetros por URL — você preenche lá manualmente
+  window.open('https://www.nfse.gov.br/EmissorNacional/Dashboard', '_blank');
 
-  // Build a prefill URL with available params
-  const params = new URLSearchParams();
-  if (c && c.cnpj) params.set('cnpjTomador', c.cnpj.replace(/\D/g,''));
-  if (c && c.nome) params.set('razaoSocialTomador', c.nome);
-  if (c && c.email) params.set('emailTomador', c.email);
-  params.set('discriminacao', desc);
-  params.set('valorServicos', valor);
-  if (competencia) params.set('competencia', competencia.replace('-','/'));
-
-  const url = `${baseUrl}?${params.toString()}`;
-  window.open(url, '_blank');
-  toast('🏛 gov.br aberto! Confirme a emissão lá e volte para registrar.');
+  // Mostra um modal de instruções com os dados para copiar
+  const c2 = DB.clientes.find(x => x.id == cId);
+  const infoHtml = `
+    <div style="font-size:13px;line-height:1.7">
+      <p style="color:var(--text-muted);margin-bottom:1rem">O portal gov.br foi aberto. Use os dados abaixo para preencher lá:</p>
+      <div style="background:var(--dark3);border-radius:8px;padding:1rem;font-size:13px">
+        <div style="margin-bottom:.5rem"><span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em">Tomador</span><div style="font-weight:500">${c2 ? c2.nome : '—'}</div></div>
+        ${c2 && c2.cnpj ? `<div style="margin-bottom:.5rem"><span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em">CNPJ/CPF</span><div style="font-weight:500;font-family:var(--mono)">${c2.cnpj}</div></div>` : ''}
+        <div style="margin-bottom:.5rem"><span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em">Descrição</span><div style="font-weight:500">${desc}</div></div>
+        <div style="margin-bottom:.5rem"><span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em">Valor</span><div style="font-weight:600;color:var(--success);font-family:var(--mono)">R$ ${parseFloat(valor).toLocaleString('pt-BR',{minimumFractionDigits:2})}</div></div>
+        ${competencia ? `<div><span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em">Competência</span><div style="font-weight:500">${competencia}</div></div>` : ''}
+      </div>
+      <p style="color:var(--text-muted);font-size:12px;margin-top:1rem">Após emitir, volte e registre o número da nota no campo abaixo. ⬇</p>
+    </div>`;
+  document.getElementById('em-tomador-wrap').style.display = 'block';
+  document.getElementById('em-tomador-info').innerHTML = infoHtml;
+  toast('🏛 gov.br aberto! Preencha lá e volte para registrar a nota.');
 }
 
 async function registrarNFAposEmissao() {
@@ -2003,22 +2008,27 @@ function abrirGovBr() {
   const competencia = document.getElementById('em-competencia').value;
   const aliquota = document.getElementById('em-aliquota').value || '2';
 
-  // Build gov.br URL - opens the emissor nacional
-  // We can pass query params that the portal supports
-  const baseUrl = 'https://www.nfse.gov.br/EmissorNacional/NotaFiscal/Emitir';
+  // Abre o portal gov.br na página de emissão
+  // O portal não aceita parâmetros por URL — você preenche lá manualmente
+  window.open('https://www.nfse.gov.br/EmissorNacional/Dashboard', '_blank');
 
-  // Build a prefill URL with available params
-  const params = new URLSearchParams();
-  if (c && c.cnpj) params.set('cnpjTomador', c.cnpj.replace(/\D/g,''));
-  if (c && c.nome) params.set('razaoSocialTomador', c.nome);
-  if (c && c.email) params.set('emailTomador', c.email);
-  params.set('discriminacao', desc);
-  params.set('valorServicos', valor);
-  if (competencia) params.set('competencia', competencia.replace('-','/'));
-
-  const url = `${baseUrl}?${params.toString()}`;
-  window.open(url, '_blank');
-  toast('🏛 gov.br aberto! Confirme a emissão lá e volte para registrar.');
+  // Mostra um modal de instruções com os dados para copiar
+  const c2 = DB.clientes.find(x => x.id == cId);
+  const infoHtml = `
+    <div style="font-size:13px;line-height:1.7">
+      <p style="color:var(--text-muted);margin-bottom:1rem">O portal gov.br foi aberto. Use os dados abaixo para preencher lá:</p>
+      <div style="background:var(--dark3);border-radius:8px;padding:1rem;font-size:13px">
+        <div style="margin-bottom:.5rem"><span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em">Tomador</span><div style="font-weight:500">${c2 ? c2.nome : '—'}</div></div>
+        ${c2 && c2.cnpj ? `<div style="margin-bottom:.5rem"><span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em">CNPJ/CPF</span><div style="font-weight:500;font-family:var(--mono)">${c2.cnpj}</div></div>` : ''}
+        <div style="margin-bottom:.5rem"><span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em">Descrição</span><div style="font-weight:500">${desc}</div></div>
+        <div style="margin-bottom:.5rem"><span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em">Valor</span><div style="font-weight:600;color:var(--success);font-family:var(--mono)">R$ ${parseFloat(valor).toLocaleString('pt-BR',{minimumFractionDigits:2})}</div></div>
+        ${competencia ? `<div><span style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em">Competência</span><div style="font-weight:500">${competencia}</div></div>` : ''}
+      </div>
+      <p style="color:var(--text-muted);font-size:12px;margin-top:1rem">Após emitir, volte e registre o número da nota no campo abaixo. ⬇</p>
+    </div>`;
+  document.getElementById('em-tomador-wrap').style.display = 'block';
+  document.getElementById('em-tomador-info').innerHTML = infoHtml;
+  toast('🏛 gov.br aberto! Preencha lá e volte para registrar a nota.');
 }
 
 async function registrarNFAposEmissao() {
